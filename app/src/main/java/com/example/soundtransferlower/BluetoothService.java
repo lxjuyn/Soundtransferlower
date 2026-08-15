@@ -679,15 +679,38 @@ public class BluetoothService extends Service {
                     if (bytes > 0) {
                         if (isTextMessage(buffer, bytes)) {
                             String message = new String(buffer, TEXT_PREFIX_BYTES.length, bytes - TEXT_PREFIX_BYTES.length);
-                            handleTextMessage(message);
+
+                            // ★★★ 处理召唤消息 ★★★
+                            if (message.startsWith(CALL_PREFIX)) {
+                                String rawName = message.substring(CALL_PREFIX.length());
+                                final String callerName = (rawName == null || rawName.isEmpty()) ? "未知用户" : rawName;
+
+                                // ★★★ 自动回复 ★★★
+                                try {
+                                    String replyMsg = "已收到 " + callerName + " 的呼唤";
+                                    byte[] replyBytes = (TEXT_PREFIX + replyMsg).getBytes("UTF-8");
+                                    outputStream.write(replyBytes);
+                                    outputStream.flush();
+                                    Log.d(TAG, "自动回复召唤消息: " + replyMsg);
+                                } catch (IOException e) {
+                                    Log.e(TAG, "发送自动回复失败", e);
+                                }
+
+                                // 显示通知和 Toast
+                                showCallNotification(callerName);
+                                continue; // 不保存，不转发
+                            }
+
+                            // 普通文本消息
+                            saveMessageToFile(message, socket.getRemoteDevice().getAddress(), false);
+                            notifyMessageReceived(message, socket.getRemoteDevice().getAddress());
                         } else {
-                            // 音频数据（对讲或通话）
                             if (currentMode == MODE_TALKBACK) {
                                 byte[] audioData = new byte[bytes];
                                 System.arraycopy(buffer, 0, audioData, 0, bytes);
                                 notifyTalkbackDataReceived(audioData, socket.getRemoteDevice().getAddress());
                             } else {
-                                Log.w(TAG, "Received non-text data in chat mode, length=" + bytes);
+                                Log.w(TAG, "Received non-text data in chat mode");
                                 notifyNonTextDataReceived(socket.getRemoteDevice().getAddress());
                             }
                         }
