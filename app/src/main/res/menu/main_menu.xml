@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/menu_pair"
+        android:title="配对以添加"/>
+
+    <item
+        android:id="@+id/menu_refresh"
+        android:title="刷新设备列表"/>
+    <item
+        android:id="@+id/menu_select_device"
+        android:title="选择设备"/>
+</menu>

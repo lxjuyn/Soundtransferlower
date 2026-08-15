@@ -1,0 +1,21 @@
+{
+  "version": 3,
+  "artifactType": {
+    "type": "APK",
+    "kind": "Directory"
+  },
+  "applicationId": "com.am.papertape",
+  "variantName": "release",
+  "elements": [
+    {
+      "type": "SINGLE",
+      "filters": [],
+      "attributes": [],
+      "versionCode": 29,
+      "versionName": "2.9.1fix",
+      "outputFile": "app-release.apk"
+    }
+  ],
+  "elementType": "File",
+  "minSdkVersionForDexing": 16
+}

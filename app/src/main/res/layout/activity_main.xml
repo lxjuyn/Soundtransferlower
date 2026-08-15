@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="未连接"
+        android:textAlignment="center"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="已配对设备:"
+        android:textSize="16sp"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- 列表区域 (占50%高度) -->
+    <ListView
+        android:id="@+id/deviceList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginBottom="16dp"/>
+
+    <!-- 按钮区域 (占50%高度) -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <Button
+                android:id="@+id/btnRefresh"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="刷新设备列表"
+                android:background="@color/purple_200"
+                android:layout_marginBottom="16dp"/>
+
+            <Button
+                android:id="@+id/btnAudioMode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="切换到听筒模式"
+                android:background="@color/purple_200"
+                android:layout_marginBottom="16dp"
+                android:enabled="false"/>
+
+            <Button
+                android:id="@+id/btnTalk"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="按下对讲"
+                android:background="@color/purple_200"
+                android:layout_marginBottom="16dp"
+                android:enabled="false"/>
+
+            <Button
+                android:id="@+id/btnDisconnect"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="断开连接"
+                android:background="@color/purple_200"
+                android:layout_marginBottom="16dp"
+                android:enabled="false"/>
+            <Button
+                android:id="@+id/btnDial"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="拨号"
+                android:layout_margin="4dp" />
+            <Button
+                android:id="@+id/btnPair"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@color/purple_200"
+                android:text="蓝牙设置"/>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

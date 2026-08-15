@@ -1,0 +1,73 @@
+package com.example.soundtransferlower;
+
+import android.content.Context;
+import android.media.AudioManager;
+import android.os.Bundle;
+import android.support.v4.app.Fragment;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.TextView;
+
+import java.util.Locale;
+
+public class CallFragment extends Fragment {
+    private TextView tvCallerName, tvDuration;
+    private Button btnHangUp, btnSpeaker;
+    private MainActivityNew mainActivity;
+    private boolean isSpeakerOn = false;
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.fragment_call, container, false);
+        tvCallerName = view.findViewById(R.id.tvCallerName);
+        tvDuration = view.findViewById(R.id.tvDuration);
+        btnHangUp = view.findViewById(R.id.btnHangUp);
+        btnSpeaker = view.findViewById(R.id.btnSpeaker);
+
+        mainActivity = (MainActivityNew) getActivity();
+        if (getArguments() != null) {
+            String name = getArguments().getString("TARGET_NAME");
+            if (name != null) {
+                tvCallerName.setText("正在与 " + name + " 通话");
+            }
+        }
+
+        btnHangUp.setOnClickListener(v -> {
+            if (mainActivity != null) {
+                mainActivity.endCall();
+            }
+        });
+
+        btnSpeaker.setOnClickListener(v -> toggleSpeaker());
+
+        updateSpeakerButton();
+        return view;
+    }
+
+    private void toggleSpeaker() {
+        isSpeakerOn = !isSpeakerOn;
+        AudioManager audioManager = (AudioManager) getActivity().getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager != null) {
+            audioManager.setSpeakerphoneOn(isSpeakerOn);
+        }
+        updateSpeakerButton();
+    }
+
+    private void updateSpeakerButton() {
+        if (btnSpeaker != null) {
+            btnSpeaker.setText(isSpeakerOn ? "听筒" : "免提");
+        }
+    }
+
+    public void updateDuration(long elapsedMillis) {
+        long seconds = elapsedMillis / 1000;
+        long minutes = seconds / 60;
+        seconds = seconds % 60;
+        String time = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds);
+        if (tvDuration != null) {
+            tvDuration.setText(time);
+        }
+    }
+}
