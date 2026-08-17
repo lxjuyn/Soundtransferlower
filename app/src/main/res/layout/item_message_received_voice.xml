@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="4dp"
+    android:gravity="start">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="@drawable/bubble_received"
+        android:padding="8dp"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/tvSender"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:textColor="#333"
+            android:text="对方" />
+
+        <ImageView
+            android:id="@+id/ivVoiceIcon"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:src="@drawable/ic_voice"
+            android:scaleType="centerInside" />
+
+        <TextView
+            android:id="@+id/tvVoiceDuration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="#333"
+            android:layout_marginStart="8dp"
+            android:text="0\" />
+
+        <TextView
+            android:id="@+id/tvTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="10sp"
+            android:textColor="#666"
+            android:layout_marginStart="12dp" />
+    </LinearLayout>
+</LinearLayout>

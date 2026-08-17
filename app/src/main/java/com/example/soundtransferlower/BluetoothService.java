@@ -44,6 +44,7 @@ public class BluetoothService extends Service {
     private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     public static final String TEXT_PREFIX = "TXT:";
     public static final byte[] TEXT_PREFIX_BYTES = TEXT_PREFIX.getBytes();
+    private static final String CALL_CHANNEL_ID = "call_channel";
 
     // 控制消息常量
     public static final String FILE_REQUEST_PREFIX = "FILE_REQUEST:";
@@ -237,18 +238,16 @@ public class BluetoothService extends Service {
         final String finalCallerName = (callerName == null || callerName.isEmpty()) ? "未知用户" : callerName;
         Log.d(TAG, "显示召唤通知，调用者: " + finalCallerName);
 
-        // Toast 提示（确保任何界面都能看到）
+        // Toast（后台可能不显示，但保留无妨）
         new Handler(Looper.getMainLooper()).post(() -> {
-            Toast.makeText(BluetoothService.this, finalCallerName + " 召唤您！在通知栏点击可跳转", Toast.LENGTH_LONG).show();
+            Toast.makeText(BluetoothService.this, finalCallerName + " 召唤您！", Toast.LENGTH_LONG).show();
         });
 
         // 构建跳转 Intent
         Intent intent = new Intent(this, MainActivityNew.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         String targetAddress = connectedDeviceAddress != null ? connectedDeviceAddress : targetDeviceAddress;
-        if (targetAddress == null) {
-            targetAddress = "";
-        }
+        if (targetAddress == null) targetAddress = "";
         intent.putExtra("DEVICE_ADDRESS", targetAddress);
         intent.putExtra("DEVICE_NAME", finalCallerName);
         intent.putExtra("LOAD_FRAGMENT", "ChatWorkFragment");
@@ -257,26 +256,22 @@ public class BluetoothService extends Service {
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-        // 确保 API 26+ 通知渠道已创建
+        // 确保渠道已创建（API 26+）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             createNotificationChannelIfNeeded();
         }
 
         Notification notification;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // API 26+ 使用原生 Builder
-            notification = new Notification.Builder(this)
+            notification = new Notification.Builder(this, CALL_CHANNEL_ID)  // ★ 使用专用渠道
                     .setSmallIcon(android.R.drawable.ic_dialog_alert)
                     .setContentTitle("召唤上线")
                     .setContentText(finalCallerName + " 召唤您！")
-                    .setPriority(Notification.PRIORITY_HIGH)
                     .setAutoCancel(true)
                     .setContentIntent(pendingIntent)
-                    .setDefaults(Notification.DEFAULT_ALL)
-                    .setChannelId("bluetooth_channel")
+                    .setDefaults(Notification.DEFAULT_ALL)  // 声音、震动、灯光
                     .build();
         } else {
-            // 低版本使用 NotificationCompat
             notification = new NotificationCompat.Builder(this)
                     .setSmallIcon(android.R.drawable.ic_dialog_alert)
                     .setContentTitle("召唤上线")
@@ -290,24 +285,39 @@ public class BluetoothService extends Service {
 
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (nm != null) {
-            nm.notify((int) System.currentTimeMillis(), notification);
+            // 使用固定的通知 ID，避免重复通知时覆盖
+            nm.notify(1002, notification);
         }
     }
-
     // ==================== 辅助方法：创建通知渠道（仅在 API 26+ 调用） ====================
     private void createNotificationChannelIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             if (nm != null) {
-                // 检查渠道是否已存在，避免重复创建（可选）
-                NotificationChannel existingChannel = nm.getNotificationChannel("bluetooth_channel");
-                if (existingChannel == null) {
-                    NotificationChannel channel = new NotificationChannel(
+                // 普通前台服务渠道（低重要性，不打扰用户）
+                NotificationChannel serviceChannel = nm.getNotificationChannel("bluetooth_channel");
+                if (serviceChannel == null) {
+                    serviceChannel = new NotificationChannel(
                             "bluetooth_channel",
                             "蓝牙服务",
-                            NotificationManager.IMPORTANCE_LOW   // 低调重要性，适合后台服务
+                            NotificationManager.IMPORTANCE_LOW
                     );
-                    nm.createNotificationChannel(channel);
+                    serviceChannel.setDescription("蓝牙服务运行通知");
+                    nm.createNotificationChannel(serviceChannel);
+                }
+
+                // ★ 召唤通知渠道（高重要性，确保弹出横幅和声音）
+                NotificationChannel callChannel = nm.getNotificationChannel(CALL_CHANNEL_ID);
+                if (callChannel == null) {
+                    callChannel = new NotificationChannel(
+                            CALL_CHANNEL_ID,
+                            "召唤提醒",
+                            NotificationManager.IMPORTANCE_HIGH
+                    );
+                    callChannel.setDescription("收到对方召唤时提醒");
+                    callChannel.enableVibration(true);
+                    callChannel.enableLights(true);
+                    nm.createNotificationChannel(callChannel);
                 }
             }
         }

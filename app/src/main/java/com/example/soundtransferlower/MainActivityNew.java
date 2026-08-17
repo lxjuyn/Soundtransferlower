@@ -47,6 +47,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import android.support.v7.app.AppCompatDelegate;
 
 public class MainActivityNew extends FragmentActivity implements BluetoothService.MessageCallback {
     private ImageButton btnBack;

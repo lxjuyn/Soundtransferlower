@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId 'com.am.papertape'
-        minSdk 9
+        minSdk 7
         //noinspection ExpiredTargetSdkVersion
         targetSdk 19
         versionCode 29
@@ -36,10 +36,9 @@ android {
 }
 
 dependencies {
-
-    implementation 'com.android.support:appcompat-v7:25.3.1'
-    implementation 'com.android.support:design:25.3.1'
-
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation 'com.android.support:appcompat-v7:24.0.0'
+    implementation 'com.android.support:design:24.0.0'
     testImplementation 'junit:junit:4.12'
     androidTestImplementation 'com.android.support.test:runner:1.0.2'
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'

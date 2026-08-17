@@ -20,6 +20,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
     private SimpleDateFormat timeFormat;
     private OnMessageLongClickListener longClickListener;
     private OnMessageClickListener clickListener;
+    private OnVoiceClickListener voiceClickListener;
 
     public interface OnMessageLongClickListener {
         void onMessageLongClick(Message message, int position);
@@ -27,6 +28,10 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
 
     public interface OnMessageClickListener {
         void onMessageClick(Message message, int position);
+    }
+
+    public interface OnVoiceClickListener {
+        void onVoiceClick(Message message, int position);
     }
 
     public MessageAdapter(List<Message> messages) {
@@ -42,44 +47,40 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
         this.clickListener = listener;
     }
 
+    public void setOnVoiceClickListener(OnVoiceClickListener listener) {
+        this.voiceClickListener = listener;
+    }
+
     @Override
     public int getItemViewType(int position) {
         Message msg = messages.get(position);
-        int base;
-        if (msg.getType() == Message.TYPE_TEXT) {
-            base = 0;
-        } else if (msg.getType() == Message.TYPE_IMAGE) {
-            base = 2;
-        } else { // TYPE_FILE
-            base = 4;
+        int type = msg.getType();
+        boolean sent = msg.isSent();
+        if (type == Message.TYPE_TEXT) {
+            return sent ? 0 : 1;
+        } else if (type == Message.TYPE_IMAGE) {
+            return sent ? 2 : 3;
+        } else if (type == Message.TYPE_FILE) {
+            return sent ? 4 : 5;
+        } else if (type == Message.TYPE_VOICE) {
+            return sent ? 6 : 7;
         }
-        return base + (msg.isSent() ? 0 : 1);
+        return sent ? 0 : 1;
     }
 
     @Override
     public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
         int layoutRes;
         switch (viewType) {
-            case 0: // 发送文本
-                layoutRes = R.layout.item_message_sent;
-                break;
-            case 1: // 接收文本
-                layoutRes = R.layout.item_message_received;
-                break;
-            case 2: // 发送图片
-                layoutRes = R.layout.item_message_sent_image;
-                break;
-            case 3: // 接收图片
-                layoutRes = R.layout.item_message_received_image;
-                break;
-            case 4: // 发送文件
-                layoutRes = R.layout.item_message_sent_file;
-                break;
-            case 5: // 接收文件
-                layoutRes = R.layout.item_message_received_file;
-                break;
-            default:
-                layoutRes = R.layout.item_message_sent;
+            case 0: layoutRes = R.layout.item_message_sent; break;
+            case 1: layoutRes = R.layout.item_message_received; break;
+            case 2: layoutRes = R.layout.item_message_sent_image; break;
+            case 3: layoutRes = R.layout.item_message_received_image; break;
+            case 4: layoutRes = R.layout.item_message_sent_file; break;
+            case 5: layoutRes = R.layout.item_message_received_file; break;
+            case 6: layoutRes = R.layout.item_message_sent_voice; break;
+            case 7: layoutRes = R.layout.item_message_received_voice; break;
+            default: layoutRes = R.layout.item_message_sent;
         }
         View view = LayoutInflater.from(parent.getContext()).inflate(layoutRes, parent, false);
         return new ViewHolder(view, viewType);
@@ -89,43 +90,38 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
     public void onBindViewHolder(ViewHolder holder, int position) {
         Message message = messages.get(position);
         holder.itemView.setOnLongClickListener(v -> {
-            if (longClickListener != null) {
-                longClickListener.onMessageLongClick(message, position);
-            }
+            if (longClickListener != null) longClickListener.onMessageLongClick(message, position);
             return true;
         });
         holder.itemView.setOnClickListener(v -> {
-            if (clickListener != null) {
-                clickListener.onMessageClick(message, position);
-            }
+            if (clickListener != null) clickListener.onMessageClick(message, position);
         });
 
-        // 设置时间
         if (message.getTimestamp() != null) {
             holder.tvTime.setText(timeFormat.format(message.getTimestamp()));
         }
 
         int type = message.getType();
+
+        // 先隐藏所有非通用视图（防御性编程）
+        if (holder.tvMessage != null) holder.tvMessage.setVisibility(View.GONE);
+        if (holder.ivImage != null) holder.ivImage.setVisibility(View.GONE);
+        if (holder.tvFileName != null) holder.tvFileName.setVisibility(View.GONE);
+        if (holder.tvFileSize != null) holder.tvFileSize.setVisibility(View.GONE);
+        if (holder.ivVoiceIcon != null) holder.ivVoiceIcon.setVisibility(View.GONE);
+        if (holder.tvVoiceDuration != null) holder.tvVoiceDuration.setVisibility(View.GONE);
+
         if (type == Message.TYPE_TEXT) {
-            // 文本消息
-            holder.tvMessage.setText(message.getContent());
-            holder.tvMessage.setVisibility(View.VISIBLE);
-            if (holder.ivImage != null) holder.ivImage.setVisibility(View.GONE);
-            if (holder.tvFileName != null) holder.tvFileName.setVisibility(View.GONE);
-            if (holder.tvFileSize != null) holder.tvFileSize.setVisibility(View.GONE);
+            if (holder.tvMessage != null) {
+                holder.tvMessage.setVisibility(View.VISIBLE);
+                holder.tvMessage.setText(message.getContent());
+            }
         } else if (type == Message.TYPE_IMAGE) {
-            // 图片消息：显示缩略图
-            if (holder.tvMessage != null) holder.tvMessage.setVisibility(View.GONE);
-            if (holder.tvFileName != null) holder.tvFileName.setVisibility(View.GONE);
-            if (holder.tvFileSize != null) holder.tvFileSize.setVisibility(View.GONE);
             if (holder.ivImage != null) {
                 holder.ivImage.setVisibility(View.VISIBLE);
                 loadImageThumbnail(holder.ivImage, message.getFilePath());
             }
-        } else { // TYPE_FILE
-            // 文件消息：显示文件名和大小
-            if (holder.tvMessage != null) holder.tvMessage.setVisibility(View.GONE);
-            if (holder.ivImage != null) holder.ivImage.setVisibility(View.GONE);
+        } else if (type == Message.TYPE_FILE) {
             if (holder.tvFileName != null) {
                 holder.tvFileName.setVisibility(View.VISIBLE);
                 holder.tvFileName.setText(message.getFileName());
@@ -134,19 +130,23 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
                 holder.tvFileSize.setVisibility(View.VISIBLE);
                 holder.tvFileSize.setText(formatFileSize(message.getFileSize()));
             }
+        } else if (type == Message.TYPE_VOICE) {
+            if (holder.ivVoiceIcon != null) {
+                holder.ivVoiceIcon.setVisibility(View.VISIBLE);
+                holder.ivVoiceIcon.setImageResource(R.drawable.ic_voice);
+                holder.ivVoiceIcon.setOnClickListener(v -> {
+                    if (voiceClickListener != null) voiceClickListener.onVoiceClick(message, position);
+                });
+            }
+            if (holder.tvVoiceDuration != null) {
+                holder.tvVoiceDuration.setVisibility(View.VISIBLE);
+                holder.tvVoiceDuration.setText(message.getVoiceDuration() + "\"");
+            }
         }
 
-        // 发送者标签（仅接收消息）
         if (holder.tvSender != null) {
             holder.tvSender.setText(message.isSent() ? "我" : "对方");
         }
-    }
-
-    private String formatFileSize(long size) {
-        if (size < 1024) return size + " B";
-        if (size < 1024 * 1024) return String.format("%.1f KB", size / 1024.0);
-        if (size < 1024 * 1024 * 1024) return String.format("%.1f MB", size / (1024.0 * 1024.0));
-        return String.format("%.1f GB", size / (1024.0 * 1024.0 * 1024.0));
     }
 
     private void loadImageThumbnail(ImageView imageView, String filePath) {
@@ -155,11 +155,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
 
     private static class ThumbnailTask extends AsyncTask<String, Void, Bitmap> {
         private WeakReference<ImageView> imageViewRef;
-
-        ThumbnailTask(ImageView imageView) {
-            imageViewRef = new WeakReference<>(imageView);
-        }
-
+        ThumbnailTask(ImageView imageView) { imageViewRef = new WeakReference<>(imageView); }
         @Override
         protected Bitmap doInBackground(String... params) {
             String path = params[0];
@@ -173,28 +169,26 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
             options.inJustDecodeBounds = false;
             return BitmapFactory.decodeFile(path, options);
         }
-
         @Override
         protected void onPostExecute(Bitmap bitmap) {
             ImageView iv = imageViewRef.get();
-            if (iv != null && bitmap != null) {
-                iv.setImageBitmap(bitmap);
-            }
+            if (iv != null && bitmap != null) iv.setImageBitmap(bitmap);
         }
     }
 
-    @Override
-    public int getItemCount() {
-        return messages.size();
+    private String formatFileSize(long size) {
+        if (size < 1024) return size + " B";
+        if (size < 1024 * 1024) return String.format("%.1f KB", size / 1024.0);
+        if (size < 1024 * 1024 * 1024) return String.format("%.1f MB", size / (1024.0 * 1024.0));
+        return String.format("%.1f GB", size / (1024.0 * 1024.0 * 1024.0));
     }
 
+    @Override
+    public int getItemCount() { return messages.size(); }
+
     static class ViewHolder extends RecyclerView.ViewHolder {
-        TextView tvMessage;
-        TextView tvTime;
-        TextView tvSender;
-        ImageView ivImage;
-        TextView tvFileName;
-        TextView tvFileSize;
+        TextView tvMessage, tvTime, tvSender, tvFileName, tvFileSize, tvVoiceDuration;
+        ImageView ivImage, ivVoiceIcon;
 
         public ViewHolder(View itemView, int viewType) {
             super(itemView);
@@ -204,6 +198,8 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
             ivImage = itemView.findViewById(R.id.ivImage);
             tvFileName = itemView.findViewById(R.id.tvFileName);
             tvFileSize = itemView.findViewById(R.id.tvFileSize);
+            ivVoiceIcon = itemView.findViewById(R.id.ivVoiceIcon);
+            tvVoiceDuration = itemView.findViewById(R.id.tvVoiceDuration);
         }
     }
 }
