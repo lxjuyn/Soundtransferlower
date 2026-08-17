@@ -10,10 +10,9 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.res.AssetFileDescriptor;
 import android.database.Cursor;
-import android.media.AudioManager;
 import android.media.MediaPlayer;
-import android.media.MediaRecorder;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
@@ -32,7 +31,6 @@ import android.support.v7.widget.RecyclerView;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.LayoutInflater;
-import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -44,9 +42,6 @@ import android.widget.PopupWindow;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import org.concentus.OpusDecoder;
-import org.concentus.OpusEncoder;
-import org.concentus.OpusException;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -66,7 +61,7 @@ import java.util.Set;
 public class ChatWorkFragment extends Fragment implements
         BluetoothService.MessageCallback,
         BluetoothFileTransferService.FileTransferCallback {
-
+    private static final long MAX_MEMORY_FILE_SIZE = 50 * 1024 * 1024; // 50MB，超过则流式复制
     private static final String TAG = "ChatWorkFragment";
     private static final int REQUEST_CODE_PICK_FILE = 1001;
     private static final String FILE_REQUEST_PREFIX = "FILE_REQUEST:";
@@ -75,7 +70,7 @@ public class ChatWorkFragment extends Fragment implements
     private static final String IMAGE_MARKER = "[IMAGE]";
     private static final String FILE_MARKER = "[FILE]";
     private static final String VOICE_MARKER = "[VOICE]";
-    private static final long MAX_FILE_SIZE = 50 * 1024 * 1024;
+    private static final long MAX_FILE_SIZE = 5000 * 1024 * 1024;
     private boolean isVoicePlaying = false;
     private Message currentPlayingVoice = null;
     private int playingPosition = -1;
@@ -448,19 +443,35 @@ public class ChatWorkFragment extends Fragment implements
             if (uri != null) {
                 try {
                     ContentResolver resolver = getActivity().getContentResolver();
-                    InputStream is = resolver.openInputStream(uri);
-                    byte[] bytes = readBytes(is);
-                    is.close();
                     String fileName = getFileNameFromUri(uri);
                     if (TextUtils.isEmpty(fileName)) fileName = "file_" + System.currentTimeMillis();
-                    if (bytes.length > MAX_FILE_SIZE) {
-                        Toast.makeText(getActivity(), "文件过大，请选择小于50MB的文件", Toast.LENGTH_SHORT).show();
+
+                    // ★★★ 获取文件大小 ★★★
+                    long fileSize = getFileSizeFromUri(uri);
+                    if (fileSize > MAX_FILE_SIZE) {
+                        Toast.makeText(getActivity(), "文件过大，请选择小于" + (MAX_FILE_SIZE / 1024 / 1024) + "MB的文件", Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    localFilePath = saveFileToLocal(bytes, fileName);
+
+                    // ★★★ 根据大小选择处理方式 ★★★
+                    if (fileSize <= MAX_MEMORY_FILE_SIZE) {
+                        // 小文件：一次性读入内存（原有方式）
+                        InputStream is = resolver.openInputStream(uri);
+                        byte[] bytes = readBytes(is);
+                        is.close();
+                        localFilePath = saveFileToLocal(bytes, fileName);
+                    } else {
+                        // ★★★ 大文件：流式复制，不读入内存 ★★★
+                        InputStream is = resolver.openInputStream(uri);
+                        localFilePath = saveFileToLocalFromStream(is, fileName);
+                        is.close();
+                    }
+
                     pendingFileName = fileName;
-                    pendingFileSize = bytes.length;
-                    sendFileRequest(fileName, bytes.length, 0); // 0 表示非语音
+                    pendingFileSize = fileSize;
+
+                    sendFileRequest(fileName, fileSize, 0);
+
                 } catch (Exception e) {
                     Log.e(TAG, "读取文件失败", e);
                     Toast.makeText(getActivity(), "读取文件失败", Toast.LENGTH_SHORT).show();
@@ -558,7 +569,6 @@ public class ChatWorkFragment extends Fragment implements
         builder.setCancelable(false);
         builder.show();
     }
-
     // 接收方：启动文件接收服务
     private void pauseBluetoothAndStartFileReceive() {
         if (getActivity() instanceof MainActivityNew) {
@@ -925,47 +935,79 @@ public class ChatWorkFragment extends Fragment implements
         if (getActivity() == null) return;
         getActivity().runOnUiThread(() -> {
             if (this.deviceAddress != null && this.deviceAddress.equals(deviceAddress)) {
-                Log.d(TAG, "收到消息: " + message);
+                Log.d(TAG, "收到消息原始内容: [" + message + "]");
+
+                // ★★★ 先处理文件请求（优先于其他类型）★★★
+                if (message.startsWith(FILE_REQUEST_PREFIX)) {
+                    Log.d(TAG, "检测到文件请求消息");
+                    // 去重
+                    if (processedMessages.contains(message)) {
+                        Log.d(TAG, "重复文件请求消息，已忽略");
+                        return;
+                    }
+                    processedMessages.add(message);
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        processedMessages.remove(message);
+                    }, 5000);
+
+                    // 解析文件名和大小（可能包含语音标记）
+                    String[] parts = message.substring(FILE_REQUEST_PREFIX.length()).split(",");
+                    if (parts.length >= 2) {
+                        String fileName = parts[0];
+                        long size;
+                        try {
+                            size = Long.parseLong(parts[1]);
+                        } catch (NumberFormatException e) {
+                            Log.e(TAG, "解析文件大小失败", e);
+                            return;
+                        }
+                        int duration = 0;
+                        if (parts.length >= 4 && "VOICE".equals(parts[2])) {
+                            duration = Integer.parseInt(parts[3]);
+                        }
+                        handleFileRequest(fileName, size, duration);
+                    } else {
+                        Log.e(TAG, "文件请求格式错误: " + message);
+                    }
+                    return; // 不再继续处理
+                }
+
+                // ★★★ 处理召唤消息 ★★★
                 if (message.startsWith(BluetoothService.CALL_PREFIX)) {
                     String callerName = message.substring(BluetoothService.CALL_PREFIX.length());
                     if (callerName.isEmpty()) callerName = "未知用户";
                     Toast.makeText(getActivity(), "📢 " + callerName + " 召唤您！", Toast.LENGTH_LONG).show();
                     return;
                 }
-                if (message.startsWith(FILE_REQUEST_PREFIX)) {
-                    Log.d(TAG, "检测到文件请求消息");
-                    String[] parts = message.substring(FILE_REQUEST_PREFIX.length()).split(",");
-                    if (parts.length >= 2) {
-                        String fileName = parts[0];
-                        long size = Long.parseLong(parts[1]);
-                        int duration = 0;
-                        // 检查是否为语音消息（格式：文件名,大小,VOICE,时长）
-                        if (parts.length >= 4 && "VOICE".equals(parts[2])) {
-                            duration = Integer.parseInt(parts[3]);
-                        }
-                        // 调用处理（注意：duration > 0 表示语音）
-                        handleFileRequest(fileName, size, duration);
-                    }
-                    return;
-                }
+
+                // ★★★ 处理文件接受/拒绝 ★★★
                 if (message.equals(FILE_ACCEPT)) {
+                    Log.d(TAG, "收到对方同意文件接收");
                     if (isWaitingForAccept && localFilePath != null && new File(localFilePath).exists()) {
                         startFileSend(localFilePath, pendingFileName);
+                    } else {
+                        Log.e(TAG, "文件不存在或等待状态异常");
+                        Toast.makeText(getActivity(), "文件已丢失", Toast.LENGTH_SHORT).show();
                     }
                     return;
                 }
+
                 if (message.equals(FILE_REJECT)) {
+                    Log.d(TAG, "收到对方拒绝文件接收");
                     isWaitingForAccept = false;
                     localFilePath = null;
                     Toast.makeText(getActivity(), "对方拒绝了文件", Toast.LENGTH_SHORT).show();
                     return;
                 }
-                // 普通文本去重
+
+                // ★★★ 普通文本消息 ★★★
                 boolean exists = false;
                 long now = new Date().getTime();
                 for (Message msg : messageList) {
-                    if (!msg.isSent() && msg.getContent().equals(message) && Math.abs(msg.getTimestamp().getTime() - now) < 2000) {
-                        exists = true; break;
+                    if (!msg.isSent() && msg.getContent().equals(message) &&
+                            Math.abs(msg.getTimestamp().getTime() - now) < 2000) {
+                        exists = true;
+                        break;
                     }
                 }
                 if (!exists) {
@@ -1238,7 +1280,53 @@ public class ChatWorkFragment extends Fragment implements
         intent.putExtra("LOAD_FRAGMENT", "TalkbackFragment");
         startActivity(intent);
     }
-
+    private long getFileSizeFromUri(Uri uri) {
+        long size = 0;
+        try {
+            ContentResolver resolver = getActivity().getContentResolver();
+            // 方法1：通过 MediaStore 查询（适用于 content://）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                try (Cursor cursor = resolver.query(uri, new String[]{MediaStore.MediaColumns.SIZE}, null, null, null)) {
+                    if (cursor != null && cursor.moveToFirst()) {
+                        int sizeIndex = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE);
+                        if (sizeIndex >= 0) {
+                            size = cursor.getLong(sizeIndex);
+                        }
+                    }
+                }
+            }
+            // 方法2：通过 AssetFileDescriptor 获取（适用于 file:// 和部分 content://）
+            if (size == 0) {
+                try (AssetFileDescriptor fd = resolver.openAssetFileDescriptor(uri, "r")) {
+                    if (fd != null) {
+                        size = fd.getLength();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "获取文件大小失败", e);
+        }
+        return size;
+    }
+    private String saveFileToLocalFromStream(InputStream inputStream, String fileName) {
+        try {
+            File dir = new File(getActivity().getExternalFilesDir(null), "files");
+            if (!dir.exists()) dir.mkdirs();
+            String timeStamp = String.valueOf(System.currentTimeMillis());
+            File file = new File(dir, timeStamp + "_" + fileName);
+            FileOutputStream fos = new FileOutputStream(file);
+            byte[] buffer = new byte[8192]; // 8KB 缓冲区
+            int len;
+            while ((len = inputStream.read(buffer)) != -1) {
+                fos.write(buffer, 0, len);
+            }
+            fos.close();
+            return file.getAbsolutePath();
+        } catch (IOException e) {
+            Log.e(TAG, "保存本地文件失败（流式）", e);
+            return null;
+        }
+    }
     private void switchToTalkbackFragment() {
         Toast.makeText(getActivity(), "检测到对讲连接，正在切换...", Toast.LENGTH_SHORT).show();
         if (getActivity() instanceof MainActivityNew) {
