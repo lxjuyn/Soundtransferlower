@@ -8,24 +8,45 @@ import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.os.Build;
 import android.util.Log;
+
+import org.concentus.OpusApplication;
+import org.concentus.OpusDecoder;
+import org.concentus.OpusEncoder;
+import org.concentus.OpusException;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class AudioRecorderPlayer {
     private static final String TAG = "AudioRecorderPlayer";
     private static final int SAMPLE_RATE = 8000;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
-    private static final int BUFFER_SIZE = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
+
+    // 每帧采样数（40ms @ 8kHz），对应 PCM 字节数 640
+    private static final int FRAME_SAMPLES = 320;
+    private static final int PCM_BYTES_PER_FRAME = FRAME_SAMPLES * 2; // 640
+    private static final int MAX_OPUS_BYTES = 1024;
 
     private AudioRecord audioRecord;
     private AudioTrack audioTrack;
     private volatile boolean isRecording = false;
     private volatile boolean isPlaying = false;
 
-    // 使用单线程执行器确保顺序播放
     private final ExecutorService playbackExecutor = Executors.newSingleThreadExecutor();
+
+    // Opus 编解码器
+    private OpusEncoder opusEncoder;
+    private OpusDecoder opusDecoder;
+
+    // 播放队列（容量 10 帧，约 400ms 缓冲）
+    private final BlockingQueue<byte[]> pcmQueue = new LinkedBlockingQueue<>(10);
+    private volatile boolean playThreadRunning = false;
+    private Thread playThread;
 
     public interface AudioDataSender {
         void sendAudioData(byte[] data);
@@ -35,6 +56,8 @@ public class AudioRecorderPlayer {
 
     public AudioRecorderPlayer(Context context) {
         initAudio();
+        initOpusCodecs();
+        startPlaybackThread();
     }
 
     public void setAudioDataSender(AudioDataSender sender) {
@@ -44,29 +67,86 @@ public class AudioRecorderPlayer {
     @SuppressLint("MissingPermission")
     private void initAudio() {
         try {
+            int minRecordBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
+            int minPlayBuf = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AUDIO_FORMAT);
+            // 播放缓冲区设为最小值的 2 倍（防止 underrun），但不超过 4 帧大小
+            int playBufferSize = Math.max(minPlayBuf, PCM_BYTES_PER_FRAME * 2);
+            playBufferSize = Math.min(playBufferSize, PCM_BYTES_PER_FRAME * 4);
+
             audioRecord = new AudioRecord(
                     MediaRecorder.AudioSource.MIC,
                     SAMPLE_RATE,
                     CHANNEL_CONFIG,
                     AUDIO_FORMAT,
-                    BUFFER_SIZE * 2);
+                    minRecordBuf * 2);
 
             audioTrack = new AudioTrack(
                     android.media.AudioManager.STREAM_VOICE_CALL,
                     SAMPLE_RATE,
                     AudioFormat.CHANNEL_OUT_MONO,
                     AUDIO_FORMAT,
-                    BUFFER_SIZE * 2,
+                    playBufferSize,
                     AudioTrack.MODE_STREAM);
 
-            Log.d(TAG, "音频录制和播放初始化成功");
+            Log.d(TAG, "音频初始化成功，播放缓冲区 = " + playBufferSize + " 字节");
         } catch (Exception e) {
             Log.e(TAG, "音频初始化失败: " + e.getMessage());
         }
     }
 
+    private void initOpusCodecs() {
+        try {
+            opusEncoder = new OpusEncoder(SAMPLE_RATE, 1, OpusApplication.OPUS_APPLICATION_VOIP);
+            opusEncoder.setBitrate(16000); // 16 kbps
+            opusDecoder = new OpusDecoder(SAMPLE_RATE, 1);
+            Log.d(TAG, "Opus 编解码器初始化成功");
+        } catch (OpusException e) {
+            Log.e(TAG, "Opus 初始化失败: " + e.getMessage());
+        }
+    }
+
+    // 启动独立播放线程
+    private void startPlaybackThread() {
+        playThreadRunning = true;
+        playThread = new Thread(() -> {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO);
+            while (playThreadRunning) {
+                try {
+                    byte[] pcmData = pcmQueue.take(); // 阻塞取数据
+                    writePcmToAudioTrack(pcmData);
+                } catch (InterruptedException e) {
+                    // 线程被中断，退出循环
+                    break;
+                } catch (Exception e) {
+                    Log.e(TAG, "播放线程异常: " + e.getMessage());
+                }
+            }
+            Log.d(TAG, "播放线程退出");
+        });
+        playThread.start();
+    }
+
+    // 向 AudioTrack 写入一帧 PCM 数据
+    private void writePcmToAudioTrack(byte[] pcmData) {
+        if (audioTrack == null || audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
+            return;
+        }
+        // 确保 AudioTrack 处于播放状态
+        if (audioTrack.getPlayState() != AudioTrack.PLAYSTATE_PLAYING) {
+            audioTrack.play();
+            isPlaying = true;
+            Log.d(TAG, "音频播放已启动");
+        }
+
+        // 直接写入整帧（640 字节很小，不会阻塞太久）
+        int written = audioTrack.write(pcmData, 0, pcmData.length);
+        if (written != pcmData.length) {
+            Log.w(TAG, "写入不完全，期望 " + pcmData.length + " 实际 " + written);
+        }
+    }
+
     public void startRecording() {
-        if (audioRecord == null || isRecording) return;
+        if (audioRecord == null || isRecording || opusEncoder == null) return;
 
         Log.d(TAG, "开始录音");
         new Thread(() -> {
@@ -74,27 +154,35 @@ public class AudioRecorderPlayer {
                 audioRecord.startRecording();
                 isRecording = true;
                 Log.d(TAG, "录音已启动");
-                // 使用固定大小的缓冲区
-                int fixedBufferSize = 640; // 固定为640字节
-                byte[] pcmBuffer = new byte[fixedBufferSize];
-                byte[] encodedBuffer = new byte[fixedBufferSize / 2]; // μ-law编码后数据减半
+
+                byte[] pcmBuffer = new byte[PCM_BYTES_PER_FRAME];
+                short[] pcmShorts = new short[FRAME_SAMPLES];
+                byte[] encodedBuffer = new byte[MAX_OPUS_BYTES];
 
                 while (isRecording) {
                     int totalRead = 0;
-                    // 循环读取直到填满缓冲区
-                    while (totalRead < fixedBufferSize) {
-                        int bytesRead = audioRecord.read(pcmBuffer, totalRead, fixedBufferSize - totalRead);
+                    while (totalRead < PCM_BYTES_PER_FRAME) {
+                        int bytesRead = audioRecord.read(pcmBuffer, totalRead, PCM_BYTES_PER_FRAME - totalRead);
                         if (bytesRead <= 0) break;
                         totalRead += bytesRead;
                     }
 
-                    if (totalRead > 0 && audioDataSender != null) {
-                        // 只发送完整的数据包
-                        if (totalRead == fixedBufferSize) {
-                            // 将PCM数据编码为μ-law
-                            int encodedSize = encodeMuLaw(pcmBuffer, encodedBuffer, totalRead);
-                            Log.d(TAG, "录制到 " + totalRead + " 字节PCM数据，编码为 " + encodedSize + " 字节μ-law数据");
-                            audioDataSender.sendAudioData(encodedBuffer);
+                    if (totalRead == PCM_BYTES_PER_FRAME && audioDataSender != null) {
+                        ByteBuffer.wrap(pcmBuffer)
+                                .order(ByteOrder.LITTLE_ENDIAN)
+                                .asShortBuffer()
+                                .get(pcmShorts);
+
+                        int encodedBytes = opusEncoder.encode(
+                                pcmShorts, 0, FRAME_SAMPLES,
+                                encodedBuffer, 0, encodedBuffer.length
+                        );
+
+                        if (encodedBytes > 0) {
+                            byte[] actualData = new byte[encodedBytes];
+                            System.arraycopy(encodedBuffer, 0, actualData, 0, encodedBytes);
+                            Log.d(TAG, String.format("编码: PCM=%d 字节 -> Opus=%d 字节", totalRead, encodedBytes));
+                            audioDataSender.sendAudioData(actualData);
                         }
                     }
                 }
@@ -121,84 +209,64 @@ public class AudioRecorderPlayer {
         }
     }
 
+    // 播放接口：解码后将 PCM 入队，由独立线程写入 AudioTrack
     public void playAudio(byte[] encodedData, int length) {
-        if (audioTrack == null || length <= 0) return;
+        if (audioTrack == null || length <= 0 || opusDecoder == null) return;
 
         playbackExecutor.execute(() -> {
             try {
-                if (audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
-                    Log.e(TAG, "AudioTrack未初始化");
+                // 解码输出 short[]
+                short[] pcmShorts = new short[FRAME_SAMPLES];
+                int decodedSamples = opusDecoder.decode(
+                        encodedData, 0, length,
+                        pcmShorts, 0, FRAME_SAMPLES, false
+                );
+
+                if (decodedSamples != FRAME_SAMPLES) {
+                    Log.w(TAG, "解码样本数异常: " + decodedSamples);
                     return;
                 }
 
-                if (audioTrack.getPlayState() != AudioTrack.PLAYSTATE_PLAYING) {
-                    audioTrack.play();
-                    isPlaying = true;
-                    Log.d(TAG, "音频播放已启动");
-                }
+                // 将 short[] 转为 byte[]（小端序）
+                byte[] pcmBytes = new byte[PCM_BYTES_PER_FRAME];
+                ByteBuffer.wrap(pcmBytes)
+                        .order(ByteOrder.LITTLE_ENDIAN)
+                        .asShortBuffer()
+                        .put(pcmShorts);
 
-                // 解码μ-law数据为PCM
-                byte[] pcmData = new byte[length * 2]; // μ-law解码后数据翻倍
-                int decodedSize = decodeMuLaw(encodedData, pcmData, length);
+                Log.d(TAG, String.format("解码: Opus=%d 字节 -> PCM=%d 字节", length, PCM_BYTES_PER_FRAME));
 
-                Log.d(TAG, "接收到 " + length + " 字节μ-law数据，解码为 " + decodedSize + " 字节PCM数据");
-
-                // 优化缓冲区大小计算
-                int bufferSize = calculateOptimalBufferSize();
-                Log.d(TAG, "优化后的缓冲区大小: " + bufferSize);
-
-                int written = 0;
-                while (written < decodedSize) {
-                    int bytesToWrite = Math.min(bufferSize, decodedSize - written);
-                    int result = audioTrack.write(pcmData, written, bytesToWrite);
-
-                    if (result > 0) {
-                        written += result;
-                    } else {
-                        Log.e(TAG, "AudioTrack写入错误: " + result);
-                        break;
+                // 入队，若队列满则丢弃最旧帧（防止内存溢出和延迟累积）
+                if (!pcmQueue.offer(pcmBytes)) {
+                    byte[] dropped = pcmQueue.poll();          // 丢弃队首
+                    if (dropped != null) {
+                        Log.w(TAG, "播放队列满，丢弃一帧");
                     }
+                    pcmQueue.offer(pcmBytes); // 再入队
                 }
-
-                Log.d(TAG, "成功播放音频数据，长度: " + decodedSize);
             } catch (Exception e) {
-                Log.e(TAG, "播放错误: " + e.getMessage());
+                Log.e(TAG, "解码错误: " + e.getMessage());
             }
         });
-    }
-
-    /**
-     * 计算优化的缓冲区大小
-     */
-    private int calculateOptimalBufferSize() {
-        int bufferSize;
-
-        // 优先使用AudioTrack的推荐缓冲区大小
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            // Android 6.0+ 使用 getBufferSizeInFrames()
-            bufferSize = audioTrack.getBufferSizeInFrames() * 2; // 每帧2字节（16位）
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            // Android 5.0+ 使用 getBufferSizeInBytes()
-            try {
-                bufferSize = (Integer) AudioTrack.class.getMethod("getBufferSizeInBytes").invoke(audioTrack);
-            } catch (Exception e) {
-                // 回退到固定大小
-                bufferSize = BUFFER_SIZE * 2;
-            }
-        } else {
-            // Android 4.4 及以下版本使用固定缓冲区大小
-            // 使用更小的缓冲区以减少延迟
-            bufferSize = Math.max(1024, BUFFER_SIZE / 2);
-        }
-
-        // 确保缓冲区大小合理
-        return Math.max(512, Math.min(bufferSize, 8192));
     }
 
     public void release() {
         stopRecording();
         isPlaying = false;
 
+        // 停止播放线程
+        playThreadRunning = false;
+        if (playThread != null) {
+            playThread.interrupt();
+            try {
+                playThread.join(100);
+            } catch (InterruptedException ignored) {
+            }
+            playThread = null;
+        }
+        pcmQueue.clear();
+
+        // 关闭解码线程池
         playbackExecutor.shutdownNow();
 
         if (audioRecord != null) {
@@ -215,124 +283,9 @@ public class AudioRecorderPlayer {
             audioTrack = null;
         }
 
+        opusEncoder = null;
+        opusDecoder = null;
+
         Log.d(TAG, "音频资源已释放");
-    }
-
-    /**
-     * μ-law编码表
-     */
-    private static final short[] MU_LAW_TABLE = {
-            -32124, -31100, -30076, -29052, -28028, -27004, -25980, -24956,
-            -23932, -22908, -21884, -20860, -19836, -18812, -17788, -16764,
-            -15996, -15484, -14972, -14460, -13948, -13436, -12924, -12412,
-            -11900, -11388, -10876, -10364, -9852, -9340, -8828, -8316,
-            -7932, -7676, -7420, -7164, -6908, -6652, -6396, -6140,
-            -5884, -5628, -5372, -5116, -4860, -4604, -4348, -4092,
-            -3900, -3772, -3644, -3516, -3388, -3260, -3132, -3004,
-            -2876, -2748, -2620, -2492, -2364, -2236, -2108, -1980,
-            -1884, -1820, -1756, -1692, -1628, -1564, -1500, -1436,
-            -1372, -1308, -1244, -1180, -1116, -1052, -988, -924,
-            -876, -844, -812, -780, -748, -716, -684, -652,
-            -620, -588, -556, -524, -492, -460, -428, -396,
-            -372, -356, -340, -324, -308, -292, -276, -260,
-            -244, -228, -212, -196, -180, -164, -148, -132,
-            -120, -112, -104, -96, -88, -80, -72, -64,
-            -56, -48, -40, -32, -24, -16, -8, 0,
-            32124, 31100, 30076, 29052, 28028, 27004, 25980, 24956,
-            23932, 22908, 21884, 20860, 19836, 18812, 17788, 16764,
-            15996, 15484, 14972, 14460, 13948, 13436, 12924, 12412,
-            11900, 11388, 10876, 10364, 9852, 9340, 8828, 8316,
-            7932, 7676, 7420, 7164, 6908, 6652, 6396, 6140,
-            5884, 5628, 5372, 5116, 4860, 4604, 4348, 4092,
-            3900, 3772, 3644, 3516, 3388, 3260, 3132, 3004,
-            2876, 2748, 2620, 2492, 2364, 2236, 2108, 1980,
-            1884, 1820, 1756, 1692, 1628, 1564, 1500, 1436,
-            1372, 1308, 1244, 1180, 1116, 1052, 988, 924,
-            876, 844, 812, 780, 748, 716, 684, 652,
-            620, 588, 556, 524, 492, 460, 428, 396,
-            372, 356, 340, 324, 308, 292, 276, 260,
-            244, 228, 212, 196, 180, 164, 148, 132,
-            120, 112, 104, 96, 88, 80, 72, 64,
-            56, 48, 40, 32, 24, 16, 8, 0
-    };
-
-    /**
-     * 将PCM数据编码为μ-law格式
-     * @param pcmData PCM输入数据
-     * @param encodedData 编码后的输出数据
-     * @param pcmLength PCM数据长度
-     * @return 编码后的数据长度
-     */
-    private int encodeMuLaw(byte[] pcmData, byte[] encodedData, int pcmLength) {
-        // 确保输入数据是偶数长度（16位样本）
-        int sampleCount = pcmLength / 2;
-
-        for (int i = 0; i < sampleCount; i++) {
-            // 将两个字节组合成16位有符号整数（小端序）
-            short sample = (short) ((pcmData[i * 2] & 0xFF) | (pcmData[i * 2 + 1] << 8));
-
-            // 查找最接近的μ-law值
-            int sign = (sample & 0x8000) >> 8;
-            if (sign != 0) {
-                sample = (short) -sample;
-            }
-
-            if (sample > 32767) sample = 32767;
-
-            int exponent = 7;
-            int mask = 0x4000;
-
-            // 找到最高有效位的位置
-            while ((sample & mask) == 0 && exponent > 0) {
-                exponent--;
-                mask >>= 1;
-            }
-
-            int mantissa = (sample >> (exponent + 3)) & 0x0F;
-            byte encoded = (byte) (sign | (exponent << 4) | mantissa);
-
-            // 取反并存储
-            encodedData[i] = (byte) ~encoded;
-        }
-
-        return sampleCount;
-    }
-
-    /**
-     * 将μ-law数据解码为PCM格式
-     * @param encodedData μ-law输入数据
-     * @param pcmData PCM输出数据
-     * @param encodedLength 编码数据长度
-     * @return 解码后的PCM数据长度
-     */
-    private int decodeMuLaw(byte[] encodedData, byte[] pcmData, int encodedLength) {
-        for (int i = 0; i < encodedLength; i++) {
-            // 取反获取原始编码值
-            byte ulaw = (byte) ~encodedData[i];
-
-            // 提取符号、指数和尾数
-            int sign = (ulaw & 0x80) >> 7;
-            int exponent = (ulaw & 0x70) >> 4;
-            int mantissa = ulaw & 0x0F;
-
-            // 重建线性样本
-            int sample = (mantissa << 3) + 0x84;
-            sample <<= exponent;
-            sample -= 0x84;
-
-            if (sign == 0) {
-                sample = -sample;
-            }
-
-            // 限制到16位范围
-            if (sample > 32767) sample = 32767;
-            if (sample < -32768) sample = -32768;
-
-            // 拆分为两个字节（小端序）
-            pcmData[i * 2] = (byte) (sample & 0xFF);
-            pcmData[i * 2 + 1] = (byte) ((sample >> 8) & 0xFF);
-        }
-
-        return encodedLength * 2;
     }
 }
