@@ -134,9 +134,9 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
             if (holder.ivVoiceIcon != null) {
                 holder.ivVoiceIcon.setVisibility(View.VISIBLE);
                 holder.ivVoiceIcon.setImageResource(R.drawable.ic_voice);
-                holder.ivVoiceIcon.setOnClickListener(v -> {
-                    if (voiceClickListener != null) voiceClickListener.onVoiceClick(message, position);
-                });
+               // holder.ivVoiceIcon.setOnClickListener(v -> {
+             //       if (voiceClickListener != null) voiceClickListener.onVoiceClick(message, position);
+              //  });
             }
             if (holder.tvVoiceDuration != null) {
                 holder.tvVoiceDuration.setVisibility(View.VISIBLE);

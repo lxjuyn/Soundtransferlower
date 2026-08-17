@@ -21,7 +21,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 public class VoiceRecorder {
     private static final String TAG = "VoiceRecorder";
@@ -37,12 +36,18 @@ public class VoiceRecorder {
     private OpusEncoder encoder;
     private OpusDecoder decoder;
     private volatile boolean isRecording = false;
-    private volatile boolean isReleased = false; // ★★★ 释放标志 ★★★
+    private volatile boolean isPlaying = false;
     private File outputFile;
     private FileOutputStream fos;
     private Handler handler;
     private OnVoiceRecordListener listener;
     private ExecutorService playbackExecutor = Executors.newSingleThreadExecutor();
+
+    // ★★★ 播放监听器 ★★★
+    public interface OnPlayListener {
+        void onPlayStart();
+        void onPlayFinish();
+    }
 
     public interface OnVoiceRecordListener {
         void onRecordStart();
@@ -52,9 +57,13 @@ public class VoiceRecorder {
     }
 
     public VoiceRecorder(OnVoiceRecordListener listener) {
-        this.listener = listener;
+        this.listener = listener != null ? listener : new OnVoiceRecordListener() {
+            @Override public void onRecordStart() {}
+            @Override public void onRecordProgress(int durationSeconds) {}
+            @Override public void onRecordFinish(File voiceFile, int durationSeconds) {}
+            @Override public void onRecordError(String error) {}
+        };
         this.handler = new Handler(Looper.getMainLooper());
-        this.isReleased = false;
         initCodecs();
         initAudioTrack();
     }
@@ -77,7 +86,7 @@ public class VoiceRecorder {
             bufferSize = PCM_BYTES_PER_FRAME * 2;
         }
         audioTrack = new AudioTrack(
-                android.media.AudioManager.STREAM_VOICE_CALL,
+                android.media.AudioManager.STREAM_MUSIC,
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_OUT_MONO,
                 AUDIO_FORMAT,
@@ -92,10 +101,11 @@ public class VoiceRecorder {
         }
     }
 
+    // ==================== 录音部分 ====================
     public void startRecording(File file) {
-        if (isRecording || encoder == null || isReleased) {
-            Log.e(TAG, "录音已在进行或编码器未初始化或已释放");
-            if (listener != null) listener.onRecordError("编码器未就绪或已释放");
+        if (isRecording || encoder == null) {
+            Log.e(TAG, "录音已在进行或编码器未初始化");
+            listener.onRecordError("编码器未就绪");
             return;
         }
         this.outputFile = file;
@@ -103,7 +113,7 @@ public class VoiceRecorder {
         if (parentDir != null && !parentDir.exists()) {
             if (!parentDir.mkdirs()) {
                 Log.e(TAG, "无法创建录音目录");
-                if (listener != null) listener.onRecordError("无法创建录音目录");
+                listener.onRecordError("无法创建录音目录");
                 return;
             }
         }
@@ -111,7 +121,7 @@ public class VoiceRecorder {
             fos = new FileOutputStream(file);
         } catch (IOException e) {
             Log.e(TAG, "打开文件输出流失败", e);
-            if (listener != null) listener.onRecordError("文件创建失败: " + e.getMessage());
+            listener.onRecordError("文件创建失败: " + e.getMessage());
             return;
         }
 
@@ -124,9 +134,7 @@ public class VoiceRecorder {
                     CHANNEL_CONFIG, AUDIO_FORMAT, bufferSize);
             audioRecord.startRecording();
             isRecording = true;
-            handler.post(() -> {
-                if (listener != null) listener.onRecordStart();
-            });
+            handler.post(() -> listener.onRecordStart());
             new Thread(new RecordRunnable()).start();
         } catch (Exception e) {
             Log.e(TAG, "启动录音失败", e);
@@ -134,7 +142,7 @@ public class VoiceRecorder {
                 try { fos.close(); } catch (IOException ignored) {}
                 fos = null;
             }
-            if (listener != null) listener.onRecordError("录音启动失败: " + e.getMessage());
+            listener.onRecordError("录音启动失败: " + e.getMessage());
         }
     }
 
@@ -156,7 +164,7 @@ public class VoiceRecorder {
 
         @Override
         public void run() {
-            while (isRecording && !isReleased) {
+            while (isRecording) {
                 FileOutputStream localFos = fos;
                 if (localFos == null) {
                     Log.e(TAG, "文件流为空，停止录音");
@@ -221,21 +229,30 @@ public class VoiceRecorder {
         }
     }
 
-    // ★★★ 播放语音（增加释放检测）★★★
-    public void playVoice(byte[] opusData, int length, int durationSeconds) {
-        if (isReleased || decoder == null || audioTrack == null) {
-            Log.e(TAG, "解码器或 AudioTrack 未初始化或已释放");
+    // ==================== 播放部分（增加控制和回调） ====================
+    public void playVoice(byte[] opusData, int length, int durationSeconds, OnPlayListener playListener) {
+        if (decoder == null || audioTrack == null) {
+            Log.e(TAG, "解码器或 AudioTrack 未初始化");
+            if (playListener != null) playListener.onPlayFinish();
             return;
         }
 
+        // 如果已在播放，先停止
+        stopPlayback();
+
+        isPlaying = true;
+        if (playListener != null) {
+            handler.post(playListener::onPlayStart);
+        }
+
         playbackExecutor.execute(() -> {
-            if (isReleased) {
-                Log.w(TAG, "播放线程已释放，跳过");
-                return;
-            }
             try {
                 int offset = 0;
-                while (offset + 2 <= length && !isReleased) {
+                if (audioTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
+                    audioTrack.stop();
+                    audioTrack.flush();
+                }
+                while (isPlaying && offset + 2 <= length) {
                     int frameLen = ((opusData[offset] & 0xFF) << 8) | (opusData[offset + 1] & 0xFF);
                     offset += 2;
                     if (offset + frameLen > length) {
@@ -257,64 +274,64 @@ public class VoiceRecorder {
                             .order(ByteOrder.LITTLE_ENDIAN)
                             .asShortBuffer()
                             .put(pcmShorts);
-
-                    // ★★★ 检查 AudioTrack 状态 ★★★
-                    if (isReleased || audioTrack == null || audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
-                        Log.w(TAG, "AudioTrack 不可用，停止播放");
-                        break;
-                    }
                     if (audioTrack.getPlayState() != AudioTrack.PLAYSTATE_PLAYING) {
                         audioTrack.play();
                     }
                     audioTrack.write(pcmBytes, 0, PCM_BYTES_PER_FRAME);
                     offset += frameLen;
                 }
-                Log.d(TAG, "播放完成，长度: " + durationSeconds + "秒");
+                Log.d(TAG, isPlaying ? "播放完成" : "播放被中断");
             } catch (OpusException e) {
                 Log.e(TAG, "播放失败", e);
                 handler.post(() -> {
-                    if (listener != null) listener.onRecordError("播放失败: " + e.getMessage());
+                    if (playListener != null) playListener.onPlayFinish();
+                    listener.onRecordError("播放失败: " + e.getMessage());
                 });
+                return;
+            } catch (IllegalStateException e) {
+                Log.e(TAG, "播放状态错误", e);
+                handler.post(() -> {
+                    if (playListener != null) playListener.onPlayFinish();
+                    listener.onRecordError("播放状态错误: " + e.getMessage());
+                });
+                return;
             }
+            // 播放结束（正常或中断）
+            isPlaying = false;
+            handler.post(() -> {
+                if (playListener != null) playListener.onPlayFinish();
+            });
         });
     }
 
-    public void release() {
-        if (isReleased) return;
-        isReleased = true;
-        stopRecording();
+    public void stopPlayback() {
+        isPlaying = false;
+        if (audioTrack != null) {
+            audioTrack.stop();
+            audioTrack.flush();
+        }
+    }
 
-        // 停止并释放 AudioTrack
+    public boolean isPlaying() {
+        return isPlaying;
+    }
+
+    public void release() {
+        stopRecording();
+        stopPlayback();
         if (audioTrack != null) {
             try {
                 audioTrack.stop();
                 audioTrack.release();
-            } catch (Exception e) {
-                Log.e(TAG, "释放 AudioTrack 失败", e);
-            }
+            } catch (Exception ignored) {}
             audioTrack = null;
         }
-
-        // 关闭播放线程池
-        if (playbackExecutor != null) {
-            playbackExecutor.shutdownNow();
-            try {
-                if (!playbackExecutor.awaitTermination(500, TimeUnit.MILLISECONDS)) {
-                    Log.w(TAG, "播放线程池未完全终止");
-                }
-            } catch (InterruptedException e) {
-                Log.w(TAG, "等待播放线程池终止被中断");
-            }
-        }
-
+        playbackExecutor.shutdownNow();
         encoder = null;
         decoder = null;
-
         if (fos != null) {
             try { fos.close(); } catch (IOException ignored) {}
             fos = null;
         }
-
-        Log.d(TAG, "VoiceRecorder 已释放");
     }
 }

@@ -39,6 +39,7 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -75,7 +76,11 @@ public class ChatWorkFragment extends Fragment implements
     private static final String FILE_MARKER = "[FILE]";
     private static final String VOICE_MARKER = "[VOICE]";
     private static final long MAX_FILE_SIZE = 50 * 1024 * 1024;
-
+    private boolean isVoicePlaying = false;
+    private Message currentPlayingVoice = null;
+    private int playingPosition = -1;
+    private Handler voiceBlinkHandler = new Handler();
+    private Runnable voiceBlinkRunnable;
     // UI
     private TextView tvDeviceName;
     private RecyclerView recyclerViewMessages;
@@ -186,7 +191,8 @@ public class ChatWorkFragment extends Fragment implements
         pendingTextMessage = null;
         deleteHandler.removeCallbacks(deleteResetRunnable);
         nonTextHandler.removeCallbacks(resetNonTextDataCount);
-
+        stopVoicePlayback();
+        voiceBlinkHandler.removeCallbacksAndMessages(null);
         // ★★★ 释放录音机 ★★★
         if (voiceRecorder != null) {
             voiceRecorder.release();
@@ -245,8 +251,11 @@ public class ChatWorkFragment extends Fragment implements
         messageAdapter = new MessageAdapter(messageList);
         messageAdapter.setOnMessageLongClickListener((message, position) -> showPopupMenu(message, position));
         messageAdapter.setOnMessageClickListener((message, position) -> {
-            if (message.getType() == Message.TYPE_IMAGE || message.getType() == Message.TYPE_FILE) {
+            int type = message.getType();
+            if (type == Message.TYPE_IMAGE || type == Message.TYPE_FILE) {
                 openFile(message);
+            } else if (type == Message.TYPE_VOICE) {
+                playVoice(message);
             }
         });
         messageAdapter.setOnVoiceClickListener((message, position) -> playVoice(message));
@@ -690,26 +699,98 @@ public class ChatWorkFragment extends Fragment implements
     // ==================== 播放语音 ====================
     private void playVoice(Message message) {
         if (message.getType() != Message.TYPE_VOICE) return;
+        int position = messageList.indexOf(message);
+        if (position < 0) return;
+
+        // ★★★ 点击同一语音 -> 停止播放 ★★★
+        if (isVoicePlaying && currentPlayingVoice == message) {
+            stopVoicePlayback();
+            return;
+        }
+
+        // 停止当前播放
+        stopVoicePlayback();
+
         String path = message.getFilePath();
         if (path == null || !new File(path).exists()) {
             Toast.makeText(getActivity(), "语音文件不存在", Toast.LENGTH_SHORT).show();
             return;
         }
+
+        // 开始新的播放
         try {
             byte[] data = new byte[(int) new File(path).length()];
             FileInputStream fis = new FileInputStream(new File(path));
             fis.read(data);
             fis.close();
+
             if (voiceRecorder == null) {
                 voiceRecorder = new VoiceRecorder(null);
             }
-            voiceRecorder.playVoice(data, data.length, message.getVoiceDuration());
+
+            // ★★★ 传入播放监听器 ★★★
+            voiceRecorder.playVoice(data, data.length, message.getVoiceDuration(), new VoiceRecorder.OnPlayListener() {
+                @Override
+                public void onPlayStart() {
+                    // 开始闪烁
+                    isVoicePlaying = true;
+                    currentPlayingVoice = message;
+                    playingPosition = position;
+                    startVoiceBlink(position);
+                }
+
+                @Override
+                public void onPlayFinish() {
+                    // 停止闪烁
+                    stopVoicePlayback();
+                }
+            });
         } catch (IOException e) {
             Log.e(TAG, "读取语音文件失败", e);
             Toast.makeText(getActivity(), "播放失败", Toast.LENGTH_SHORT).show();
         }
     }
+    private void startVoiceBlink(int position) {
+        voiceBlinkRunnable = new Runnable() {
+            private boolean visible = true;
+            @Override
+            public void run() {
+                if (!isVoicePlaying) {
+                    // 停止闪烁，恢复图标
+                    updateVoiceIcon(position, true);
+                    return;
+                }
+                visible = !visible;
+                updateVoiceIcon(position, visible);
+                voiceBlinkHandler.postDelayed(this, 500);
+            }
+        };
+        voiceBlinkHandler.post(voiceBlinkRunnable);
+    }
 
+    private void updateVoiceIcon(int position, boolean show) {
+        RecyclerView.ViewHolder holder = recyclerViewMessages.findViewHolderForAdapterPosition(position);
+        if (holder != null && holder.itemView != null) {
+            ImageView iv = holder.itemView.findViewById(R.id.ivVoiceIcon);
+            if (iv != null) {
+                iv.setAlpha(show ? 1.0f : 0.3f);
+            }
+        }
+    }
+
+    private void stopVoicePlayback() {
+        isVoicePlaying = false;
+        voiceBlinkHandler.removeCallbacks(voiceBlinkRunnable);
+        // 恢复图标
+        if (playingPosition >= 0) {
+            updateVoiceIcon(playingPosition, true);
+            playingPosition = -1;
+        }
+        currentPlayingVoice = null;
+        if (voiceRecorder != null) {
+            voiceRecorder.stopPlayback();
+        }
+    }
     // ==================== 文件传输回调 ====================
     @Override
     public void onProgressUpdate(long totalBytes, long transferredBytes, int progress) {
