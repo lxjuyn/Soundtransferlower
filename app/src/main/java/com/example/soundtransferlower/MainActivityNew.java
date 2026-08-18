@@ -565,6 +565,7 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
                 boolean isChat = currentFragment instanceof ChatWorkFragment;
                 boolean isTalkback = currentFragment instanceof TalkbackFragment;
 
+                // ★★★ 只有当前不是目标 Fragment 时才跳转，避免重复刷新 ★★★
                 if (mode == BluetoothService.MODE_CHAT && !isChat) {
                     switchToFragment("ChatWorkFragment", address, name);
                 } else if (mode == BluetoothService.MODE_TALKBACK && !isTalkback) {
@@ -573,7 +574,6 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             }
         });
     }
-
     @Override
     public void onTalkbackDataReceived(byte[] data, String deviceAddress) {
         if (isInCall) {

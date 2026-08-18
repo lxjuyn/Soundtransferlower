@@ -958,107 +958,127 @@ public class ChatWorkFragment extends Fragment implements
     public void onMessageReceived(String message, String deviceAddress) {
         if (getActivity() == null) return;
         getActivity().runOnUiThread(() -> {
-            if (this.deviceAddress != null && this.deviceAddress.equals(deviceAddress)) {
-                Log.d(TAG, "收到消息原始内容: [" + message + "]");
-
-                // ★★★ 1. 呼叫控制消息（最高优先级） ★★★
-                if (message.startsWith(BluetoothService.CALL_REQUEST)) {
-                    Log.d(TAG, "检测到呼叫请求消息");
-                    String callerName = message.substring(BluetoothService.CALL_REQUEST.length());
-                    if (callerName.isEmpty()) callerName = "未知用户";
-                    if (getActivity() instanceof MainActivityNew) {
-                        ((MainActivityNew) getActivity()).onCallRequest(callerName, deviceAddress);
+            // ★★★ 如果当前 deviceAddress 未设置，则自动设为第一个发来消息的设备 ★★★
+            if (this.deviceAddress == null && deviceAddress != null) {
+                this.deviceAddress = deviceAddress;
+                // 尝试从 BluetoothService 获取设备名称
+                if (bluetoothService != null) {
+                    String name = bluetoothService.getConnectedDeviceName();
+                    if (name != null && !name.isEmpty()) {
+                        this.deviceName = name;
                     }
+                }
+                // 加载该设备的历史记录
+                loadChatHistory();
+                // 更新标题
+                tvDeviceName.setText(this.deviceName + " (已连接)");
+            }
+
+            // ★★★ 接受来自当前 deviceAddress 的消息（或 deviceAddress 为 null 时接受任何消息）★★★
+            if (this.deviceAddress != null && !this.deviceAddress.equals(deviceAddress)) {
+                Log.d(TAG, "忽略来自其他设备的消息: " + deviceAddress);
+                return;
+            }
+
+            Log.d(TAG, "收到消息原始内容: [" + message + "]");
+
+            // 1. 呼叫控制消息（最高优先级）
+            if (message.startsWith(BluetoothService.CALL_REQUEST)) {
+                Log.d(TAG, "检测到呼叫请求消息");
+                String callerName = message.substring(BluetoothService.CALL_REQUEST.length());
+                if (callerName.isEmpty()) callerName = "未知用户";
+                if (getActivity() instanceof MainActivityNew) {
+                    ((MainActivityNew) getActivity()).onCallRequest(callerName, deviceAddress);
+                }
+                return;
+            }
+            if (message.trim().equals(BluetoothService.CALL_ACCEPT) ||
+                    message.trim().equals(BluetoothService.CALL_REJECT) ||
+                    message.trim().equals(BluetoothService.CALL_HANGUP)) {
+                Log.d(TAG, "检测到呼叫控制消息: " + message);
+                if (getActivity() instanceof MainActivityNew) {
+                    if (message.trim().equals(BluetoothService.CALL_ACCEPT))
+                        ((MainActivityNew) getActivity()).onCallAccepted(deviceAddress);
+                    else if (message.trim().equals(BluetoothService.CALL_REJECT))
+                        ((MainActivityNew) getActivity()).onCallRejected(deviceAddress);
+                    else
+                        ((MainActivityNew) getActivity()).onCallHungUp(deviceAddress);
+                }
+                return;
+            }
+
+            // 2. 文件请求（含语音）
+            if (message.startsWith(FILE_REQUEST_PREFIX)) {
+                Log.d(TAG, "检测到文件请求消息");
+                if (processedMessages.contains(message)) {
+                    Log.d(TAG, "重复文件请求消息，已忽略");
                     return;
                 }
-                if (message.equals(BluetoothService.CALL_ACCEPT) ||
-                        message.equals(BluetoothService.CALL_REJECT) ||
-                        message.equals(BluetoothService.CALL_HANGUP)) {
-                    Log.d(TAG, "检测到呼叫控制消息: " + message);
-                    if (getActivity() instanceof MainActivityNew) {
-                        if (message.equals(BluetoothService.CALL_ACCEPT))
-                            ((MainActivityNew) getActivity()).onCallAccepted(deviceAddress);
-                        else if (message.equals(BluetoothService.CALL_REJECT))
-                            ((MainActivityNew) getActivity()).onCallRejected(deviceAddress);
-                        else
-                            ((MainActivityNew) getActivity()).onCallHungUp(deviceAddress);
-                    }
-                    return;
-                }
+                processedMessages.add(message);
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    processedMessages.remove(message);
+                }, 5000);
 
-                // ★★★ 2. 文件请求（含语音） ★★★
-                if (message.startsWith(FILE_REQUEST_PREFIX)) {
-                    Log.d(TAG, "检测到文件请求消息");
-                    if (processedMessages.contains(message)) {
-                        Log.d(TAG, "重复文件请求消息，已忽略");
+                String[] parts = message.substring(FILE_REQUEST_PREFIX.length()).split(",");
+                if (parts.length >= 2) {
+                    String fileName = parts[0];
+                    long size;
+                    try {
+                        size = Long.parseLong(parts[1]);
+                    } catch (NumberFormatException e) {
+                        Log.e(TAG, "解析文件大小失败", e);
                         return;
                     }
-                    processedMessages.add(message);
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        processedMessages.remove(message);
-                    }, 5000);
-
-                    String[] parts = message.substring(FILE_REQUEST_PREFIX.length()).split(",");
-                    if (parts.length >= 2) {
-                        String fileName = parts[0];
-                        long size;
-                        try {
-                            size = Long.parseLong(parts[1]);
-                        } catch (NumberFormatException e) {
-                            Log.e(TAG, "解析文件大小失败", e);
-                            return;
-                        }
-                        int duration = 0;
-                        if (parts.length >= 4 && "VOICE".equals(parts[2])) {
-                            duration = Integer.parseInt(parts[3]);
-                        }
-                        handleFileRequest(fileName, size, duration);
+                    int duration = 0;
+                    if (parts.length >= 4 && "VOICE".equals(parts[2])) {
+                        duration = Integer.parseInt(parts[3]);
                     }
-                    return;
+                    handleFileRequest(fileName, size, duration);
                 }
+                return;
+            }
 
-                // ★★★ 3. 召唤消息 ★★★
-                if (message.startsWith(BluetoothService.CALL_PREFIX)) {
-                    String callerName = message.substring(BluetoothService.CALL_PREFIX.length());
-                    if (callerName.isEmpty()) callerName = "未知用户";
-                    Toast.makeText(getActivity(), "📢 " + callerName + " 召唤您！", Toast.LENGTH_LONG).show();
-                    return;
-                }
+            // 3. 召唤消息
+            if (message.startsWith(BluetoothService.CALL_PREFIX)) {
+                String callerName = message.substring(BluetoothService.CALL_PREFIX.length());
+                if (callerName.isEmpty()) callerName = "未知用户";
+                Toast.makeText(getActivity(), "📢 " + callerName + " 召唤您！", Toast.LENGTH_LONG).show();
+                return;
+            }
 
-                // ★★★ 4. 文件接受/拒绝 ★★★
-                if (message.equals(FILE_ACCEPT)) {
-                    Log.d(TAG, "收到对方同意文件接收");
-                    if (isWaitingForAccept && localFilePath != null && new File(localFilePath).exists()) {
-                        startFileSend(localFilePath, pendingFileName);
-                    } else {
-                        Log.e(TAG, "文件不存在或等待状态异常");
-                        Toast.makeText(getActivity(), "文件已丢失", Toast.LENGTH_SHORT).show();
-                    }
-                    return;
+            // 4. 文件接受/拒绝
+            if (message.trim().equals(FILE_ACCEPT)) {
+                Log.d(TAG, "收到对方同意文件接收");
+                if (isWaitingForAccept && localFilePath != null && new File(localFilePath).exists()) {
+                    startFileSend(localFilePath, pendingFileName);
+                } else {
+                    Log.e(TAG, "文件不存在或等待状态异常");
+                    Toast.makeText(getActivity(), "文件已丢失", Toast.LENGTH_SHORT).show();
                 }
-                if (message.equals(FILE_REJECT)) {
-                    Log.d(TAG, "收到对方拒绝文件接收");
-                    isWaitingForAccept = false;
-                    localFilePath = null;
-                    Toast.makeText(getActivity(), "对方拒绝了文件", Toast.LENGTH_SHORT).show();
-                    return;
-                }
+                return;
+            }
+            if (message.trim().equals(FILE_REJECT)) {
+                Log.d(TAG, "收到对方拒绝文件接收");
+                isWaitingForAccept = false;
+                localFilePath = null;
+                Toast.makeText(getActivity(), "对方拒绝了文件", Toast.LENGTH_SHORT).show();
+                return;
+            }
 
-                // ★★★ 5. 普通文本（去重） ★★★
-                boolean exists = false;
-                long now = new Date().getTime();
-                for (Message msg : messageList) {
-                    if (!msg.isSent() && msg.getContent().equals(message) &&
-                            Math.abs(msg.getTimestamp().getTime() - now) < 2000) {
-                        exists = true;
-                        break;
-                    }
+            // 5. 普通文本消息（去重）
+            boolean exists = false;
+            long now = new Date().getTime();
+            for (Message msg : messageList) {
+                if (!msg.isSent() && msg.getContent().equals(message) &&
+                        Math.abs(msg.getTimestamp().getTime() - now) < 2000) {
+                    exists = true;
+                    break;
                 }
-                if (!exists) {
-                    messageList.add(new Message(message, false, new Date()));
-                    messageAdapter.notifyItemInserted(messageList.size() - 1);
-                    recyclerViewMessages.scrollToPosition(messageList.size() - 1);
-                }
+            }
+            if (!exists) {
+                messageList.add(new Message(message, false, new Date()));
+                messageAdapter.notifyItemInserted(messageList.size() - 1);
+                recyclerViewMessages.scrollToPosition(messageList.size() - 1);
             }
         });
     }
@@ -1066,21 +1086,20 @@ public class ChatWorkFragment extends Fragment implements
     public void onConnectionStatusChanged(int state, String deviceName) {
         if (getActivity() == null) return;
         getActivity().runOnUiThread(() -> {
+            final String displayName = (deviceName != null && !deviceName.isEmpty()) ? deviceName : "未知设备";
             switch (state) {
                 case BluetoothService.STATE_CONNECTED:
-                    tvDeviceName.setText(deviceName + " (已连接)");
-                    // ★★★ 关键修复：获取当前连接设备信息，并重置 historyLoaded ★★★
+                    tvDeviceName.setText(displayName + " (已连接)");
+                    // ★★★ 更新 deviceAddress 和 deviceName ★★★
                     String connectedAddr = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
                     if (connectedAddr != null) {
-                        // 如果 deviceAddress 为空或与当前连接不同，更新并重置加载标志
-                        if (ChatWorkFragment.this.deviceAddress == null || !ChatWorkFragment.this.deviceAddress.equals(connectedAddr)) {
-                            ChatWorkFragment.this.deviceAddress = connectedAddr;
-                            String newName = bluetoothService.getConnectedDeviceName();
-                            ChatWorkFragment.this.deviceName = (newName != null) ? newName : "未知设备";
-                            historyLoaded = false; // 重置标志，确保重新加载
+                        if (deviceAddress == null || !deviceAddress.equals(connectedAddr)) {
+                            deviceAddress = connectedAddr;
+                            ChatWorkFragment.this.deviceName = displayName;
+                            historyLoaded = false;
                         }
                     }
-                    if (!historyLoaded && ChatWorkFragment.this.deviceAddress != null) {
+                    if (!historyLoaded && deviceAddress != null) {
                         loadChatHistory();
                         historyLoaded = true;
                     }
@@ -1092,7 +1111,7 @@ public class ChatWorkFragment extends Fragment implements
                     }
                     break;
                 case BluetoothService.STATE_CONNECTING:
-                    tvDeviceName.setText(deviceName + " (连接中...)");
+                    tvDeviceName.setText(displayName + " (连接中...)");
                     break;
                 case BluetoothService.STATE_LISTEN:
                     tvDeviceName.setText("等待连接...");
@@ -1105,14 +1124,23 @@ public class ChatWorkFragment extends Fragment implements
         if (getActivity() == null) return;
         getActivity().runOnUiThread(() -> {
             if (this.deviceAddress != null && this.deviceAddress.equals(deviceAddress)) {
-                nonTextDataCount++;
-                nonTextHandler.removeCallbacks(resetNonTextDataCount);
-                if (nonTextDataCount >= 2) switchToTalkbackFragment();
-                else nonTextHandler.postDelayed(resetNonTextDataCount, 1000);
+                // ★★★ 只有在当前 Fragment 为 TalkbackFragment 时才切换，否则忽略 ★★★
+                Fragment currentFragment = getActivity().getSupportFragmentManager().findFragmentById(R.id.fragment_container);
+                if (currentFragment instanceof TalkbackFragment) {
+                    nonTextDataCount++;
+                    nonTextHandler.removeCallbacks(resetNonTextDataCount);
+                    if (nonTextDataCount >= 2) {
+                        switchToTalkbackFragment();
+                    } else {
+                        nonTextHandler.postDelayed(resetNonTextDataCount, 1000);
+                    }
+                } else {
+                    // 聊天模式下收到非文本数据，忽略（不切换）
+                    Log.d(TAG, "聊天模式下忽略非文本数据");
+                }
             }
         });
     }
-
     @Override public void onTalkbackDataReceived(byte[] data, String deviceAddress) {}
 
     // ==================== 消息操作 ====================
