@@ -10,4 +10,8 @@
     <item
         android:id="@+id/menu_select_device"
         android:title="选择设备"/>
+    <item
+        android:id="@+id/menu_settings"
+        android:title="设置"
+        android:showAsAction="never"/>
 </menu>

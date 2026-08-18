@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId 'com.am.papertape'
-        minSdk 7
+        minSdk 15
         //noinspection ExpiredTargetSdkVersion
         targetSdk 19
         versionCode 29
@@ -37,6 +37,9 @@ android {
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
+    // NOTE: Concentus Opus (纯 Java Opus 编解码器) 不在 Maven Central 上，请手动将
+    // ConcentusOpus.jar 放入 app/libs/ 目录，fileTree 会自动引入。
+    // 来源: https://github.com/concentus/Concentus
     implementation 'com.android.support:appcompat-v7:24.0.0'
     implementation 'com.android.support:design:24.0.0'
     testImplementation 'junit:junit:4.12'

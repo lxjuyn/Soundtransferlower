@@ -933,6 +933,9 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         } else if (id == R.id.menu_select_device) {
             showDeviceSelectionDialog();
             return true;
+        } else if (id == R.id.menu_settings) {
+            loadFragment(new SettingsFragment());
+            return true;
         }
         return super.onOptionsItemSelected(item);
     }
