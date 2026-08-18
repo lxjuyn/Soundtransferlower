@@ -169,10 +169,10 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         if (isFromNotification) {
             // 等待服务绑定
         } else {
+            // ★★★ 启动时不再弹出设备选择对话框 ★★★
             handler.postDelayed(() -> {
                 if (isFirstLaunch && serviceBound) {
-                    // ★★★ 取消设备选择弹窗，直接进入聊天界面 ★★★
-                    // 但检查是否有已连接设备，如果有则跳转至对应 Fragment
+                    // 检查是否有已连接设备，若有则跳转
                     if (bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
                         String address = bluetoothService.getConnectedDeviceAddress();
                         String name = bluetoothService.getConnectedDeviceName();
