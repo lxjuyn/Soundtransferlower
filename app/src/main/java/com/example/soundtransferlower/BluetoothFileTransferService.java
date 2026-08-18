@@ -12,6 +12,8 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -21,6 +23,9 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.zip.CRC32;
 
 public class BluetoothFileTransferService extends Service {
     private static final String TAG = "FileTransferService";
@@ -48,6 +53,8 @@ public class BluetoothFileTransferService extends Service {
 
     private final CopyOnWriteArrayList<FileTransferCallback> callbacks = new CopyOnWriteArrayList<>();
     private Handler mainHandler = new Handler(Looper.getMainLooper());
+    // 优化：文件传输使用独立线程池，避免阻塞主蓝牙通道
+    private final ExecutorService fileTransferExecutor = Executors.newSingleThreadExecutor();
 
     public interface FileTransferCallback {
         void onTransferComplete(boolean success, String filePath);
@@ -193,7 +200,8 @@ public class BluetoothFileTransferService extends Service {
         }
 
         connectedThread = new ConnectedThread(socket);
-        connectedThread.start();
+        // 优化：文件传输使用独立线程池，避免阻塞主蓝牙通道
+        fileTransferExecutor.execute(connectedThread);
         setState(STATE_CONNECTED);
         Log.d(TAG, "ConnectedThread started");
     }
@@ -215,9 +223,69 @@ public class BluetoothFileTransferService extends Service {
         setState(STATE_NONE);
     }
 
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        // 优化：释放线程池资源
+        fileTransferExecutor.shutdownNow();
+    }
+
     private void setState(int state) {
         this.state = state;
         Log.d(TAG, "setState: " + state);
+    }
+
+    // ==================== 协议工具方法 ====================
+    private static byte[] intToBytes(int value) {
+        return new byte[]{
+                (byte) (value >> 24),
+                (byte) (value >> 16),
+                (byte) (value >> 8),
+                (byte) value
+        };
+    }
+
+    private static int bytesToInt(byte[] bytes) {
+        return ((bytes[0] & 0xFF) << 24) |
+                ((bytes[1] & 0xFF) << 16) |
+                ((bytes[2] & 0xFF) << 8) |
+                (bytes[3] & 0xFF);
+    }
+
+    private static byte[] shortToBytes(short value) {
+        return new byte[]{
+                (byte) (value >> 8),
+                (byte) value
+        };
+    }
+
+    private static short bytesToShort(byte[] bytes) {
+        return (short) (((bytes[0] & 0xFF) << 8) | (bytes[1] & 0xFF));
+    }
+
+    // 优化：支持long(8字节)文件长度，支持>2GB文件
+    private static byte[] longToBytes(long value) {
+        return new byte[]{
+                (byte) (value >> 56),
+                (byte) (value >> 48),
+                (byte) (value >> 40),
+                (byte) (value >> 32),
+                (byte) (value >> 24),
+                (byte) (value >> 16),
+                (byte) (value >> 8),
+                (byte) value
+        };
+    }
+
+    private static long bytesToLong(byte[] bytes) {
+        return ((long) (bytes[0] & 0xFF) << 56) |
+                ((long) (bytes[1] & 0xFF) << 48) |
+                ((long) (bytes[2] & 0xFF) << 40) |
+                ((long) (bytes[3] & 0xFF) << 32) |
+                ((long) (bytes[4] & 0xFF) << 24) |
+                ((long) (bytes[5] & 0xFF) << 16) |
+                ((long) (bytes[6] & 0xFF) << 8) |
+                ((long) (bytes[7] & 0xFF));
     }
 
     // ---------- 内部线程 ----------
@@ -344,8 +412,19 @@ public class BluetoothFileTransferService extends Service {
             } catch (IOException e) {
                 Log.e(TAG, "streams not created", e);
             }
-            inputStream = tmpIn;
-            outputStream = tmpOut;
+            // 优化：使用 BufferedInputStream/BufferedOutputStream 减少系统调用次数
+            inputStream = (tmpIn != null) ? new BufferedInputStream(tmpIn, 8192) : null;
+            outputStream = (tmpOut != null) ? new BufferedOutputStream(tmpOut, 8192) : null;
+        }
+
+        // 优化：确保读取指定长度的数据（防止粘包/拆包）
+        private void readFully(byte[] buffer) throws IOException {
+            int offset = 0;
+            while (offset < buffer.length) {
+                int n = inputStream.read(buffer, offset, buffer.length - offset);
+                if (n == -1) throw new IOException("EOF");
+                offset += n;
+            }
         }
 
         @Override
@@ -360,20 +439,23 @@ public class BluetoothFileTransferService extends Service {
                         return;
                     }
                     long fileLen = file.length();
-                    // 1. 发送文件长度
-                    outputStream.write(intToBytes((int) fileLen));
-                    // 2. 发送文件名长度和文件名
+                    // 优化：文件长度使用long(8字节)，支持>2GB文件
+                    outputStream.write(longToBytes(fileLen));
+                    // 发送文件名长度和文件名
                     byte[] nameBytes = fileName.getBytes(StandardCharsets.UTF_8);
                     outputStream.write(shortToBytes((short) nameBytes.length));
                     outputStream.write(nameBytes);
-                    // 3. 发送文件数据（带进度回调）
+                    // 优化：计算CRC32校验码
+                    CRC32 crc32 = new CRC32();
+                    // 优化：文件传输使用64KB缓冲区
                     FileInputStream fis = new FileInputStream(file);
-                    byte[] buffer = new byte[8192]; // 增大缓冲区
+                    byte[] buffer = new byte[65536]; // 64KB
                     int bytesRead;
                     long totalSent = 0;
                     long lastCallbackTime = System.currentTimeMillis();
                     while ((bytesRead = fis.read(buffer)) != -1) {
                         outputStream.write(buffer, 0, bytesRead);
+                        crc32.update(buffer, 0, bytesRead);
                         totalSent += bytesRead;
                         long now = System.currentTimeMillis();
                         if (now - lastCallbackTime >= 3000) {
@@ -385,27 +467,23 @@ public class BluetoothFileTransferService extends Service {
                         }
                     }
                     fis.close();
+                    // 发送CRC32校验码（4字节）
+                    outputStream.write(intToBytes((int) crc32.getValue()));
                     outputStream.flush();
-                    Log.d(TAG, "文件发送完成，长度=" + fileLen);
+                    Log.d(TAG, "文件发送完成，长度=" + fileLen + ", CRC32=" + Long.toHexString(crc32.getValue()));
                     // 确保最后一次进度回调（100%）
                     progressHandler.post(() -> notifyProgress(fileLen, fileLen, 100));
-                    // 等待接收方完成
-                    try {
-                        Thread.sleep(1500);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
                     notifyComplete(true, null);
                 } else if ("RECEIVE".equals(action)) {
-                    // 1. 读取文件长度
-                    byte[] lenBytes = new byte[4];
+                    // 优化：文件长度使用long(8字节)
+                    byte[] lenBytes = new byte[8];
                     readFully(lenBytes);
-                    int fileLen = bytesToInt(lenBytes);
-                    // 2. 读取文件名长度
+                    long fileLen = bytesToLong(lenBytes);
+                    // 读取文件名长度
                     byte[] nameLenBytes = new byte[2];
                     readFully(nameLenBytes);
                     short nameLen = bytesToShort(nameLenBytes);
-                    // 3. 读取文件名
+                    // 读取文件名
                     byte[] nameBytes = new byte[nameLen];
                     readFully(nameBytes);
                     String originalName = new String(nameBytes, StandardCharsets.UTF_8);
@@ -434,18 +512,22 @@ public class BluetoothFileTransferService extends Service {
                         file = new File(dir, newName);
                         count++;
                     }
+                    // 优化：计算接收数据的CRC32
+                    CRC32 crc32 = new CRC32();
                     FileOutputStream fos = new FileOutputStream(file);
-                    byte[] buffer = new byte[8192];
-                    int remaining = fileLen;
+                    // 优化：文件传输使用64KB缓冲区
+                    byte[] buffer = new byte[65536]; // 64KB
+                    long remaining = fileLen;
                     long totalReceived = 0;
                     long lastCallbackTime = System.currentTimeMillis();
                     while (remaining > 0) {
-                        int toRead = Math.min(8192, remaining);
+                        int toRead = (int) Math.min(buffer.length, remaining);
                         int bytes = inputStream.read(buffer, 0, toRead);
                         if (bytes == -1) {
                             throw new IOException("连接意外断开");
                         }
                         fos.write(buffer, 0, bytes);
+                        crc32.update(buffer, 0, bytes);
                         totalReceived += bytes;
                         remaining -= bytes;
                         long now = System.currentTimeMillis();
@@ -458,7 +540,19 @@ public class BluetoothFileTransferService extends Service {
                         }
                     }
                     fos.close();
-                    Log.d(TAG, "文件接收完成，保存到: " + file.getAbsolutePath());
+                    // 读取并验证CRC32校验码
+                    byte[] crcBytes = new byte[4];
+                    readFully(crcBytes);
+                    int receivedCrc = bytesToInt(crcBytes);
+                    int computedCrc = (int) crc32.getValue();
+                    if (receivedCrc != computedCrc) {
+                        Log.e(TAG, "CRC32校验失败: 期望=" + Integer.toHexString(receivedCrc) +
+                                ", 实际=" + Integer.toHexString(computedCrc));
+                        file.delete();
+                        notifyComplete(false, null);
+                        return;
+                    }
+                    Log.d(TAG, "文件接收完成，CRC32校验通过，保存到: " + file.getAbsolutePath());
                     // 确保最后一次进度回调
                     progressHandler.post(() -> notifyProgress(fileLen, fileLen, 100));
                     notifyComplete(true, file.getAbsolutePath());
@@ -478,42 +572,6 @@ public class BluetoothFileTransferService extends Service {
                     Log.e(TAG, "关闭socket失败", e);
                 }
             }
-        }
-
-        private void readFully(byte[] buffer) throws IOException {
-            int offset = 0;
-            while (offset < buffer.length) {
-                int n = inputStream.read(buffer, offset, buffer.length - offset);
-                if (n == -1) throw new IOException("EOF");
-                offset += n;
-            }
-        }
-
-        private byte[] intToBytes(int value) {
-            return new byte[]{
-                    (byte) (value >> 24),
-                    (byte) (value >> 16),
-                    (byte) (value >> 8),
-                    (byte) value
-            };
-        }
-
-        private int bytesToInt(byte[] bytes) {
-            return ((bytes[0] & 0xFF) << 24) |
-                    ((bytes[1] & 0xFF) << 16) |
-                    ((bytes[2] & 0xFF) << 8) |
-                    (bytes[3] & 0xFF);
-        }
-
-        private byte[] shortToBytes(short value) {
-            return new byte[]{
-                    (byte) (value >> 8),
-                    (byte) value
-            };
-        }
-
-        private short bytesToShort(byte[] bytes) {
-            return (short) (((bytes[0] & 0xFF) << 8) | (bytes[1] & 0xFF));
         }
 
         public void cancel() {

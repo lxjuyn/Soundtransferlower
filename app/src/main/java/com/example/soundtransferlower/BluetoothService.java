@@ -23,6 +23,8 @@ import android.support.v4.app.NotificationCompat;
 import android.util.Log;
 import android.widget.Toast;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -32,6 +34,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -660,30 +663,37 @@ public class BluetoothService extends Service {
             } catch (IOException e) {
                 Log.e(TAG, "temp sockets not created", e);
             }
-            inputStream = tmpIn;
-            outputStream = tmpOut;
+            // 优化：使用 BufferedInputStream/BufferedOutputStream 减少系统调用次数
+            inputStream = (tmpIn != null) ? new BufferedInputStream(tmpIn, 8192) : null;
+            outputStream = (tmpOut != null) ? new BufferedOutputStream(tmpOut, 8192) : null;
         }
 
         public void run() {
-            byte[] buffer = new byte[1024];
-            int bytes;
+            byte[] buffer = new byte[8192]; // 优化：缓冲区从1024提升到8192
+            byte[] lenBuffer = new byte[4];
 
             while (isRunning) {
                 try {
-                    bytes = inputStream.read(buffer);
-                    if (bytes > 0) {
-                        if (isTextMessage(buffer, bytes)) {
-                            String message = new String(buffer, TEXT_PREFIX_BYTES.length, bytes - TEXT_PREFIX_BYTES.length);
-                            handleTextMessage(message);
+                    // 优化：使用长度前缀协议，防止粘包/拆包
+                    readFully(lenBuffer, 0, 4);
+                    int payloadLength = bytesToInt(lenBuffer);
+                    if (payloadLength <= 0 || payloadLength > buffer.length) {
+                        Log.e(TAG, "Invalid payload length: " + payloadLength);
+                        break;
+                    }
+                    byte[] payload = new byte[payloadLength];
+                    readFully(payload, 0, payloadLength);
+
+                    if (isTextMessage(payload, payloadLength)) {
+                        String message = new String(payload, TEXT_PREFIX_BYTES.length,
+                                payloadLength - TEXT_PREFIX_BYTES.length, StandardCharsets.UTF_8);
+                        handleTextMessage(message);
+                    } else {
+                        if (currentMode == MODE_TALKBACK) {
+                            notifyTalkbackDataReceived(payload, socket.getRemoteDevice().getAddress());
                         } else {
-                            if (currentMode == MODE_TALKBACK) {
-                                byte[] audioData = new byte[bytes];
-                                System.arraycopy(buffer, 0, audioData, 0, bytes);
-                                notifyTalkbackDataReceived(audioData, socket.getRemoteDevice().getAddress());
-                            } else {
-                                Log.w(TAG, "Received non-text data in chat mode");
-                                notifyNonTextDataReceived(socket.getRemoteDevice().getAddress());
-                            }
+                            Log.w(TAG, "Received non-text data in chat mode");
+                            notifyNonTextDataReceived(socket.getRemoteDevice().getAddress());
                         }
                     }
                 } catch (IOException e) {
@@ -746,12 +756,41 @@ public class BluetoothService extends Service {
             return true;
         }
 
+        // 优化：确保读取指定长度的数据（防止粘包/拆包）
+        private void readFully(byte[] buffer, int offset, int length) throws IOException {
+            int totalRead = 0;
+            while (totalRead < length) {
+                int n = inputStream.read(buffer, offset + totalRead, length - totalRead);
+                if (n == -1) throw new IOException("EOF while reading fully");
+                totalRead += n;
+            }
+        }
+
+        private byte[] intToBytes(int value) {
+            return new byte[]{
+                    (byte) (value >> 24),
+                    (byte) (value >> 16),
+                    (byte) (value >> 8),
+                    (byte) value
+            };
+        }
+
+        private int bytesToInt(byte[] bytes) {
+            return ((bytes[0] & 0xFF) << 24) |
+                    ((bytes[1] & 0xFF) << 16) |
+                    ((bytes[2] & 0xFF) << 8) |
+                    (bytes[3] & 0xFF);
+        }
+
         public void write(byte[] buffer) {
             write(buffer, currentMode);
         }
 
         public void write(byte[] buffer, int mode) {
             try {
+                // 优化：添加4字节长度前缀，防止粘包/拆包
+                byte[] lenBytes = intToBytes(buffer.length);
+                outputStream.write(lenBytes);
                 outputStream.write(buffer);
                 outputStream.flush();
                 if (mode == MODE_CHAT) {
