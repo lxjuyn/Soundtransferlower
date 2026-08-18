@@ -14,6 +14,7 @@ import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Message;
 import android.os.IBinder;
 import android.os.Looper;
 import android.support.v4.app.Fragment;
