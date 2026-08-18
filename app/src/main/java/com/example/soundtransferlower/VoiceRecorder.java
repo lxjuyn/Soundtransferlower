@@ -165,13 +165,19 @@ public class VoiceRecorder {
         @Override
         public void run() {
             while (isRecording) {
-                FileOutputStream localFos = fos;
-                if (localFos == null) {
-                    Log.e(TAG, "文件流为空，停止录音");
-                    isRecording = false;
-                    handler.post(() -> listener.onRecordError("文件流无效"));
-                    break;
+                // ★★★ 获取局部引用并检查 ★★★
+                FileOutputStream localFos;
+                synchronized (VoiceRecorder.this) {
+                    localFos = fos;
+                    if (localFos == null) {
+                        Log.w(TAG, "fos 为空，等待重新打开...");
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException ignored) {}
+                        continue;
+                    }
                 }
+
                 if (audioRecord == null) {
                     Log.e(TAG, "AudioRecord 为空，停止录音");
                     isRecording = false;
@@ -216,13 +222,12 @@ public class VoiceRecorder {
                     }
                 }
             }
-            if (fos != null) {
-                try {
-                    fos.close();
-                } catch (IOException e) {
-                    Log.e(TAG, "关闭文件流失败", e);
+            // 录音结束，关闭文件流
+            synchronized (VoiceRecorder.this) {
+                if (fos != null) {
+                    try { fos.close(); } catch (IOException ignored) {}
+                    fos = null;
                 }
-                fos = null;
             }
             int finalDuration = totalSamples / SAMPLE_RATE;
             handler.post(() -> listener.onRecordFinish(outputFile, finalDuration));

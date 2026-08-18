@@ -176,6 +176,22 @@ public class ChatWorkFragment extends Fragment implements
         initUI(view);
         Intent serviceIntent = new Intent(getActivity(), BluetoothService.class);
         getActivity().bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE);
+
+        // ★★★ 如果服务已经连接，立即加载历史（增强鲁棒性）★★★
+        // 由于绑定是异步的，这里不能直接使用 bluetoothService，需在 serviceConnection 中处理
+        // 但为了处理从其他界面切回时已连接的情况，我们延迟检查
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (serviceBound && bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
+                String addr = bluetoothService.getConnectedDeviceAddress();
+                if (addr != null && (deviceAddress == null || deviceAddress.equals(addr))) {
+                    if (!historyLoaded) {
+                        loadChatHistory();
+                        historyLoaded = true;
+                    }
+                }
+            }
+        }, 300); // 延迟 300ms 等待绑定完成
+
         return view;
     }
 
@@ -287,6 +303,8 @@ public class ChatWorkFragment extends Fragment implements
 
     // ==================== 召唤 ====================
     private void sendCall() {
+        if (getActivity() == null) return;
+
         if (bluetoothService == null || bluetoothService.getState() != BluetoothService.STATE_CONNECTED) {
             Toast.makeText(getActivity(), "未连接，正在重连...", Toast.LENGTH_LONG).show();
             if (deviceAddress != null && bluetoothService != null) {
@@ -295,8 +313,12 @@ public class ChatWorkFragment extends Fragment implements
                     BluetoothDevice device = adapter.getRemoteDevice(deviceAddress);
                     bluetoothService.connect(device);
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        if (bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) doSendCall();
-                        else Toast.makeText(getActivity(), "重连失败，请稍后重试", Toast.LENGTH_LONG).show();
+                        if (getActivity() == null) return;
+                        if (bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
+                            doSendCall();
+                        } else {
+                            Toast.makeText(getActivity(), "重连失败，请稍后重试", Toast.LENGTH_LONG).show();
+                        }
                     }, 3000);
                 }
             }
@@ -306,6 +328,8 @@ public class ChatWorkFragment extends Fragment implements
     }
 
     private void doSendCall() {
+        if (getActivity() == null) return;
+
         if (bluetoothService == null || bluetoothService.getState() != BluetoothService.STATE_CONNECTED) {
             Toast.makeText(getActivity(), "未连接，无法召唤", Toast.LENGTH_SHORT).show();
             return;
@@ -937,43 +961,32 @@ public class ChatWorkFragment extends Fragment implements
             if (this.deviceAddress != null && this.deviceAddress.equals(deviceAddress)) {
                 Log.d(TAG, "收到消息原始内容: [" + message + "]");
 
-                // ★★★ 优先处理呼叫控制消息 ★★★
+                // ★★★ 1. 呼叫控制消息（最高优先级） ★★★
                 if (message.startsWith(BluetoothService.CALL_REQUEST)) {
                     Log.d(TAG, "检测到呼叫请求消息");
                     String callerName = message.substring(BluetoothService.CALL_REQUEST.length());
                     if (callerName.isEmpty()) callerName = "未知用户";
-                    // 转发给主Activity处理
                     if (getActivity() instanceof MainActivityNew) {
                         ((MainActivityNew) getActivity()).onCallRequest(callerName, deviceAddress);
                     }
                     return;
                 }
-
-                if (message.equals(BluetoothService.CALL_ACCEPT)) {
-                    Log.d(TAG, "检测到呼叫接受消息");
+                if (message.equals(BluetoothService.CALL_ACCEPT) ||
+                        message.equals(BluetoothService.CALL_REJECT) ||
+                        message.equals(BluetoothService.CALL_HANGUP)) {
+                    Log.d(TAG, "检测到呼叫控制消息: " + message);
                     if (getActivity() instanceof MainActivityNew) {
-                        ((MainActivityNew) getActivity()).onCallAccepted(deviceAddress);
+                        if (message.equals(BluetoothService.CALL_ACCEPT))
+                            ((MainActivityNew) getActivity()).onCallAccepted(deviceAddress);
+                        else if (message.equals(BluetoothService.CALL_REJECT))
+                            ((MainActivityNew) getActivity()).onCallRejected(deviceAddress);
+                        else
+                            ((MainActivityNew) getActivity()).onCallHungUp(deviceAddress);
                     }
                     return;
                 }
 
-                if (message.equals(BluetoothService.CALL_REJECT)) {
-                    Log.d(TAG, "检测到呼叫拒绝消息");
-                    if (getActivity() instanceof MainActivityNew) {
-                        ((MainActivityNew) getActivity()).onCallRejected(deviceAddress);
-                    }
-                    return;
-                }
-
-                if (message.equals(BluetoothService.CALL_HANGUP)) {
-                    Log.d(TAG, "检测到呼叫挂断消息");
-                    if (getActivity() instanceof MainActivityNew) {
-                        ((MainActivityNew) getActivity()).onCallHungUp(deviceAddress);
-                    }
-                    return;
-                }
-
-                // ★★★ 处理文件请求 ★★★
+                // ★★★ 2. 文件请求（含语音） ★★★
                 if (message.startsWith(FILE_REQUEST_PREFIX)) {
                     Log.d(TAG, "检测到文件请求消息");
                     if (processedMessages.contains(message)) {
@@ -1004,7 +1017,7 @@ public class ChatWorkFragment extends Fragment implements
                     return;
                 }
 
-                // ★★★ 处理召唤消息 ★★★
+                // ★★★ 3. 召唤消息 ★★★
                 if (message.startsWith(BluetoothService.CALL_PREFIX)) {
                     String callerName = message.substring(BluetoothService.CALL_PREFIX.length());
                     if (callerName.isEmpty()) callerName = "未知用户";
@@ -1012,7 +1025,7 @@ public class ChatWorkFragment extends Fragment implements
                     return;
                 }
 
-                // ★★★ 处理文件接受/拒绝 ★★★
+                // ★★★ 4. 文件接受/拒绝 ★★★
                 if (message.equals(FILE_ACCEPT)) {
                     Log.d(TAG, "收到对方同意文件接收");
                     if (isWaitingForAccept && localFilePath != null && new File(localFilePath).exists()) {
@@ -1023,7 +1036,6 @@ public class ChatWorkFragment extends Fragment implements
                     }
                     return;
                 }
-
                 if (message.equals(FILE_REJECT)) {
                     Log.d(TAG, "收到对方拒绝文件接收");
                     isWaitingForAccept = false;
@@ -1032,7 +1044,7 @@ public class ChatWorkFragment extends Fragment implements
                     return;
                 }
 
-                // ★★★ 普通文本消息（去重） ★★★
+                // ★★★ 5. 普通文本（去重） ★★★
                 boolean exists = false;
                 long now = new Date().getTime();
                 for (Message msg : messageList) {
@@ -1057,7 +1069,21 @@ public class ChatWorkFragment extends Fragment implements
             switch (state) {
                 case BluetoothService.STATE_CONNECTED:
                     tvDeviceName.setText(deviceName + " (已连接)");
-                    if (!historyLoaded && deviceAddress != null) { loadChatHistory(); historyLoaded = true; }
+                    // ★★★ 关键修复：获取当前连接设备信息，并重置 historyLoaded ★★★
+                    String connectedAddr = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+                    if (connectedAddr != null) {
+                        // 如果 deviceAddress 为空或与当前连接不同，更新并重置加载标志
+                        if (ChatWorkFragment.this.deviceAddress == null || !ChatWorkFragment.this.deviceAddress.equals(connectedAddr)) {
+                            ChatWorkFragment.this.deviceAddress = connectedAddr;
+                            String newName = bluetoothService.getConnectedDeviceName();
+                            ChatWorkFragment.this.deviceName = (newName != null) ? newName : "未知设备";
+                            historyLoaded = false; // 重置标志，确保重新加载
+                        }
+                    }
+                    if (!historyLoaded && ChatWorkFragment.this.deviceAddress != null) {
+                        loadChatHistory();
+                        historyLoaded = true;
+                    }
                     if (pendingTextMessage != null) {
                         String msg = pendingTextMessage;
                         pendingTextMessage = null;
@@ -1065,12 +1091,15 @@ public class ChatWorkFragment extends Fragment implements
                         Toast.makeText(getActivity(), "重连成功，已发送消息", Toast.LENGTH_SHORT).show();
                     }
                     break;
-                case BluetoothService.STATE_CONNECTING: tvDeviceName.setText(deviceName + " (连接中...)"); break;
-                case BluetoothService.STATE_LISTEN: tvDeviceName.setText("等待连接..."); break;
+                case BluetoothService.STATE_CONNECTING:
+                    tvDeviceName.setText(deviceName + " (连接中...)");
+                    break;
+                case BluetoothService.STATE_LISTEN:
+                    tvDeviceName.setText("等待连接...");
+                    break;
             }
         });
     }
-
     @Override
     public void onNonTextDataReceived(String deviceAddress) {
         if (getActivity() == null) return;

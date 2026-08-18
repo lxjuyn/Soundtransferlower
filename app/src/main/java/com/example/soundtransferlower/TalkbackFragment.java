@@ -264,6 +264,12 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
                     data.length - BluetoothService.TEXT_PREFIX_BYTES.length);
             onMessageReceived(message, deviceAddress);
         } else {
+            // ★★★ 增加空指针保护 ★★★
+            if (audioRecorderPlayer == null) {
+                Log.w(TAG, "audioRecorderPlayer 为空，重新初始化");
+                initAudio();
+                if (audioRecorderPlayer == null) return;
+            }
             audioRecorderPlayer.playAudio(data, data.length);
             setState(STATE_RECEIVING);
             resetInactivityTimer();
@@ -272,7 +278,6 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         checkPacketHandler.removeCallbacks(checkPacketRunnable);
         checkPacketHandler.postDelayed(checkPacketRunnable, 2000);
     }
-
     @Override
     public void onNonTextDataReceived(String deviceAddress) {
         // 对讲模式不处理
