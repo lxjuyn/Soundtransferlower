@@ -44,7 +44,6 @@ public class BluetoothService extends Service {
     private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     public static final String TEXT_PREFIX = "TXT:";
     public static final byte[] TEXT_PREFIX_BYTES = TEXT_PREFIX.getBytes();
-    private static final String CALL_CHANNEL_ID = "call_channel";
 
     // 控制消息常量
     public static final String FILE_REQUEST_PREFIX = "FILE_REQUEST:";
@@ -87,12 +86,24 @@ public class BluetoothService extends Service {
     private static final int NOTIFICATION_ID = 1001;
     private static final long HEARTBEAT_INTERVAL = 30 * 60 * 1000;
 
+    // ---- ★★★ 健康检查 ★★★ ----
+    private Handler healthCheckHandler = new Handler(Looper.getMainLooper());
+    private Runnable healthCheckRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (state == STATE_NONE || (state == STATE_LISTEN && acceptThread == null)) {
+                Log.w(TAG, "健康检查：服务未监听，重新启动");
+                start();
+            }
+            healthCheckHandler.postDelayed(this, 30000); // 每30秒检查一次
+        }
+    };
+
     public interface MessageCallback {
         void onMessageReceived(String message, String deviceAddress);
         void onConnectionStatusChanged(int state, String deviceName);
         void onTalkbackDataReceived(byte[] data, String deviceAddress);
         void onNonTextDataReceived(String deviceAddress);
-        // 新增呼叫回调
         void onCallRequest(String callerName, String deviceAddress);
         void onCallAccepted(String deviceAddress);
         void onCallRejected(String deviceAddress);
@@ -115,12 +126,14 @@ public class BluetoothService extends Service {
         super.onCreate();
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         state = STATE_NONE;
-        createNotificationChannel();
+        createNotificationChannelIfNeeded(); // 统一创建通知渠道
         initKeepAlive();
         startForeground(NOTIFICATION_ID, createForegroundNotification());
         registerScreenReceiver();
         startHeartbeat();
-        // 不自动start，由MainActivity控制
+        // 启动健康检查
+        healthCheckHandler.post(healthCheckRunnable);
+        // 注意：不自动start，由MainActivity控制
     }
 
     @Override
@@ -134,6 +147,7 @@ public class BluetoothService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        healthCheckHandler.removeCallbacks(healthCheckRunnable);
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
         }
@@ -150,15 +164,34 @@ public class BluetoothService extends Service {
     }
 
     // ==================== 通知渠道 ====================
-    private void createNotificationChannel() {
+    private void createNotificationChannelIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel("bluetooth_channel",
-                    "蓝牙服务",
-                    NotificationManager.IMPORTANCE_LOW);
-            channel.setDescription("蓝牙服务运行通知");
-            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) {
+                // 普通前台服务渠道
+                NotificationChannel serviceChannel = nm.getNotificationChannel("bluetooth_channel");
+                if (serviceChannel == null) {
+                    serviceChannel = new NotificationChannel(
+                            "bluetooth_channel",
+                            "蓝牙服务",
+                            NotificationManager.IMPORTANCE_LOW
+                    );
+                    serviceChannel.setDescription("蓝牙服务运行通知");
+                    nm.createNotificationChannel(serviceChannel);
+                }
+                // 召唤通知渠道（高重要性）
+                NotificationChannel callChannel = nm.getNotificationChannel("call_channel");
+                if (callChannel == null) {
+                    callChannel = new NotificationChannel(
+                            "call_channel",
+                            "召唤提醒",
+                            NotificationManager.IMPORTANCE_HIGH
+                    );
+                    callChannel.setDescription("收到对方召唤时提醒");
+                    callChannel.enableVibration(true);
+                    callChannel.enableLights(true);
+                    nm.createNotificationChannel(callChannel);
+                }
             }
         }
     }
@@ -202,26 +235,18 @@ public class BluetoothService extends Service {
         }
     }
 
-    // ==================== 创建前台通知 ====================
+    // ==================== 前台通知 ====================
     private Notification createForegroundNotification() {
-        // 确保 Android 8.0+ 已创建通知渠道（仅当第一次调用时创建）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            createNotificationChannelIfNeeded();
-        }
-
         Notification notification;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // API 26+ 必须使用原生 Builder 并设置 channelId
-            notification = new Notification.Builder(this)
+            notification = new Notification.Builder(this, "bluetooth_channel")
                     .setSmallIcon(android.R.drawable.ic_dialog_info)
                     .setContentTitle("蓝牙服务运行中")
                     .setContentText("等待连接...")
                     .setPriority(Notification.PRIORITY_LOW)
                     .setOngoing(true)
-                    .setChannelId("bluetooth_channel")
                     .build();
         } else {
-            // 低版本使用 NotificationCompat（无需 channelId）
             notification = new NotificationCompat.Builder(this)
                     .setSmallIcon(android.R.drawable.ic_dialog_info)
                     .setContentTitle("蓝牙服务运行中")
@@ -233,17 +258,16 @@ public class BluetoothService extends Service {
         return notification;
     }
 
-    // ==================== 召唤上线（通知） ====================
+    // ==================== 召唤通知 ====================
     private void showCallNotification(String callerName) {
         final String finalCallerName = (callerName == null || callerName.isEmpty()) ? "未知用户" : callerName;
         Log.d(TAG, "显示召唤通知，调用者: " + finalCallerName);
 
-        // Toast（后台可能不显示，但保留无妨）
+        // Toast（后台可能不显示，但保留）
         new Handler(Looper.getMainLooper()).post(() -> {
             Toast.makeText(BluetoothService.this, finalCallerName + " 召唤您！", Toast.LENGTH_LONG).show();
         });
 
-        // 构建跳转 Intent
         Intent intent = new Intent(this, MainActivityNew.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         String targetAddress = connectedDeviceAddress != null ? connectedDeviceAddress : targetDeviceAddress;
@@ -256,20 +280,15 @@ public class BluetoothService extends Service {
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-        // 确保渠道已创建（API 26+）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            createNotificationChannelIfNeeded();
-        }
-
         Notification notification;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notification = new Notification.Builder(this, CALL_CHANNEL_ID)  // ★ 使用专用渠道
+            notification = new Notification.Builder(this, "call_channel")
                     .setSmallIcon(android.R.drawable.ic_dialog_alert)
                     .setContentTitle("召唤上线")
                     .setContentText(finalCallerName + " 召唤您！")
                     .setAutoCancel(true)
                     .setContentIntent(pendingIntent)
-                    .setDefaults(Notification.DEFAULT_ALL)  // 声音、震动、灯光
+                    .setDefaults(Notification.DEFAULT_ALL)
                     .build();
         } else {
             notification = new NotificationCompat.Builder(this)
@@ -285,43 +304,10 @@ public class BluetoothService extends Service {
 
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (nm != null) {
-            // 使用固定的通知 ID，避免重复通知时覆盖
             nm.notify(1002, notification);
         }
     }
-    // ==================== 辅助方法：创建通知渠道（仅在 API 26+ 调用） ====================
-    private void createNotificationChannelIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            if (nm != null) {
-                // 普通前台服务渠道（低重要性，不打扰用户）
-                NotificationChannel serviceChannel = nm.getNotificationChannel("bluetooth_channel");
-                if (serviceChannel == null) {
-                    serviceChannel = new NotificationChannel(
-                            "bluetooth_channel",
-                            "蓝牙服务",
-                            NotificationManager.IMPORTANCE_LOW
-                    );
-                    serviceChannel.setDescription("蓝牙服务运行通知");
-                    nm.createNotificationChannel(serviceChannel);
-                }
 
-                // ★ 召唤通知渠道（高重要性，确保弹出横幅和声音）
-                NotificationChannel callChannel = nm.getNotificationChannel(CALL_CHANNEL_ID);
-                if (callChannel == null) {
-                    callChannel = new NotificationChannel(
-                            CALL_CHANNEL_ID,
-                            "召唤提醒",
-                            NotificationManager.IMPORTANCE_HIGH
-                    );
-                    callChannel.setDescription("收到对方召唤时提醒");
-                    callChannel.enableVibration(true);
-                    callChannel.enableLights(true);
-                    nm.createNotificationChannel(callChannel);
-                }
-            }
-        }
-    }
     // ==================== 公开方法 ====================
     public void setConnectionRole(boolean isInitiator, String targetDeviceAddress) {
         this.isInitiator = isInitiator;
@@ -495,7 +481,6 @@ public class BluetoothService extends Service {
         });
     }
 
-    // 新增呼叫回调
     private void notifyCallRequest(String callerName, String deviceAddress) {
         new Handler(Looper.getMainLooper()).post(() -> {
             for (MessageCallback callback : messageCallbacks) {
@@ -689,31 +674,7 @@ public class BluetoothService extends Service {
                     if (bytes > 0) {
                         if (isTextMessage(buffer, bytes)) {
                             String message = new String(buffer, TEXT_PREFIX_BYTES.length, bytes - TEXT_PREFIX_BYTES.length);
-
-                            // ★★★ 处理召唤消息 ★★★
-                            if (message.startsWith(CALL_PREFIX)) {
-                                String rawName = message.substring(CALL_PREFIX.length());
-                                final String callerName = (rawName == null || rawName.isEmpty()) ? "未知用户" : rawName;
-
-                                // ★★★ 自动回复 ★★★
-                                try {
-                                    String replyMsg = "已收到 " + callerName + " 的呼唤";
-                                    byte[] replyBytes = (TEXT_PREFIX + replyMsg).getBytes("UTF-8");
-                                    outputStream.write(replyBytes);
-                                    outputStream.flush();
-                                    Log.d(TAG, "自动回复召唤消息: " + replyMsg);
-                                } catch (IOException e) {
-                                    Log.e(TAG, "发送自动回复失败", e);
-                                }
-
-                                // 显示通知和 Toast
-                                showCallNotification(callerName);
-                                continue; // 不保存，不转发
-                            }
-
-                            // 普通文本消息
-                            saveMessageToFile(message, socket.getRemoteDevice().getAddress(), false);
-                            notifyMessageReceived(message, socket.getRemoteDevice().getAddress());
+                            handleTextMessage(message);
                         } else {
                             if (currentMode == MODE_TALKBACK) {
                                 byte[] audioData = new byte[bytes];
@@ -734,36 +695,42 @@ public class BluetoothService extends Service {
 
         private void handleTextMessage(String message) {
             String deviceAddress = socket.getRemoteDevice().getAddress();
-            // 检测各类控制消息
-            if (message.startsWith(CALL_REQUEST)) {
-                String callerName = message.substring(CALL_REQUEST.length());
+            // 去除首尾空格，防止匹配失败
+            String trimmed = message.trim();
+
+            // 呼叫控制消息（优先匹配）
+            if (trimmed.startsWith(CALL_REQUEST)) {
+                String callerName = trimmed.substring(CALL_REQUEST.length());
                 if (callerName.isEmpty()) callerName = "未知用户";
-                // 发出呼叫请求通知
                 notifyCallRequest(callerName, deviceAddress);
                 return;
-            } else if (message.equals(CALL_ACCEPT)) {
+            }
+            if (trimmed.equals(CALL_ACCEPT)) {
                 notifyCallAccepted(deviceAddress);
                 return;
-            } else if (message.equals(CALL_REJECT)) {
+            }
+            if (trimmed.equals(CALL_REJECT)) {
                 notifyCallRejected(deviceAddress);
                 return;
-            } else if (message.equals(CALL_HANGUP)) {
+            }
+            if (trimmed.equals(CALL_HANGUP)) {
                 notifyCallHungUp(deviceAddress);
                 return;
-            } else if (message.startsWith(CALL_PREFIX)) {
-                // 旧版召唤
-                String callerName = message.substring(CALL_PREFIX.length());
+            }
+
+            // 旧版召唤
+            if (trimmed.startsWith(CALL_PREFIX)) {
+                String callerName = trimmed.substring(CALL_PREFIX.length());
                 if (callerName.isEmpty()) callerName = "未知用户";
                 showCallNotification(callerName);
                 return;
             }
 
-            // 文件控制消息
-            if (message.startsWith(FILE_REQUEST_PREFIX) ||
-                    message.equals(FILE_ACCEPT) ||
-                    message.equals(FILE_REJECT)) {
-                // 由ChatWorkFragment处理，透传
-                notifyMessageReceived(message, deviceAddress);
+            // 文件控制消息（透传）
+            if (trimmed.startsWith(FILE_REQUEST_PREFIX) ||
+                    trimmed.equals(FILE_ACCEPT) ||
+                    trimmed.equals(FILE_REJECT)) {
+                notifyMessageReceived(message, deviceAddress); // 透传原始消息
                 return;
             }
 
@@ -771,7 +738,6 @@ public class BluetoothService extends Service {
             saveMessageToFile(message, deviceAddress, false);
             notifyMessageReceived(message, deviceAddress);
         }
-
         private boolean isTextMessage(byte[] data, int length) {
             if (length < TEXT_PREFIX_BYTES.length) return false;
             for (int i = 0; i < TEXT_PREFIX_BYTES.length; i++) {
@@ -793,7 +759,7 @@ public class BluetoothService extends Service {
                     if (message.startsWith(TEXT_PREFIX)) {
                         message = message.substring(TEXT_PREFIX.length());
                     }
-                    // 过滤控制消息不保存
+                    // 过滤控制消息
                     if (!message.startsWith(CALL_REQUEST) && !message.startsWith(CALL_PREFIX) &&
                             !message.equals(CALL_ACCEPT) && !message.equals(CALL_REJECT) && !message.equals(CALL_HANGUP) &&
                             !message.startsWith(FILE_REQUEST_PREFIX) && !message.equals(FILE_ACCEPT) && !message.equals(FILE_REJECT)) {

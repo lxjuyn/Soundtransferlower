@@ -11,6 +11,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -322,6 +323,21 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
     }
 
     private void connectToDeviceForChatAndNavigate(BluetoothDevice device) {
+        // ★★★ 如果已经是当前连接的设备，直接跳转 ★★★
+        String currentAddress = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+        if (currentAddress != null && currentAddress.equals(device.getAddress())) {
+            ChatWorkFragment chatWorkFragment = new ChatWorkFragment();
+            Bundle args = new Bundle();
+            args.putString("DEVICE_ADDRESS", device.getAddress());
+            args.putString("DEVICE_NAME", device.getName());
+            chatWorkFragment.setArguments(args);
+            clearBackStack();
+            loadFragment(chatWorkFragment);
+            updateStatusDisplay();
+            return;
+        }
+
+        // 原有逻辑...
         if (!serviceBound || bluetoothService == null) {
             Toast.makeText(this, "蓝牙服务未就绪", Toast.LENGTH_SHORT).show();
             return;
@@ -358,6 +374,22 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
     }
 
     private void connectToDeviceForChat(BluetoothDevice device) {
+        // ★★★ 如果该设备已经是当前连接的设备，直接跳转到聊天界面，不重新连接 ★★★
+        String currentAddress = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+        if (currentAddress != null && currentAddress.equals(device.getAddress())) {
+            // 直接切换到聊天界面，加载历史
+            ChatWorkFragment chatWorkFragment = new ChatWorkFragment();
+            Bundle args = new Bundle();
+            args.putString("DEVICE_ADDRESS", device.getAddress());
+            args.putString("DEVICE_NAME", device.getName());
+            chatWorkFragment.setArguments(args);
+            clearBackStack();
+            loadFragment(chatWorkFragment);
+            updateStatusDisplay();
+            return;
+        }
+
+        // 原有连接逻辑...
         if (!serviceBound || bluetoothService == null) {
             Toast.makeText(this, "蓝牙服务未就绪", Toast.LENGTH_SHORT).show();
             return;
@@ -392,7 +424,6 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         clearBackStack();
         loadFragment(chatWorkFragment);
     }
-
     // ==================== 服务连接 ====================
     private ServiceConnection serviceConnection = new ServiceConnection() {
         @Override
@@ -469,6 +500,21 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
     // ==================== 蓝牙服务回调 ====================
     @Override
     public void onMessageReceived(String message, String deviceAddress) {
+        // 过滤控制消息（不显示Toast，不保存）
+        if (message == null) return;
+        String trimmed = message.trim();
+        if (trimmed.startsWith(BluetoothService.FILE_REQUEST_PREFIX) ||
+                trimmed.equals(BluetoothService.FILE_ACCEPT) ||
+                trimmed.equals(BluetoothService.FILE_REJECT) ||
+                trimmed.startsWith(BluetoothService.CALL_PREFIX) ||
+                trimmed.startsWith(BluetoothService.CALL_REQUEST) ||
+                trimmed.equals(BluetoothService.CALL_ACCEPT) ||
+                trimmed.equals(BluetoothService.CALL_REJECT) ||
+                trimmed.equals(BluetoothService.CALL_HANGUP)) {
+            // 控制消息，忽略
+            return;
+        }
+
         final String displayMessage = message.startsWith("TXT:") ? message.substring(4) : message;
         runOnUiThread(() -> {
             Toast.makeText(this, "收到新消息: " + displayMessage, Toast.LENGTH_SHORT).show();
@@ -678,17 +724,24 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             callAudioRecorder = null;
         }
 
-        if (bluetoothService != null) {
-            Fragment currentFragment = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
-            int mode = (currentFragment instanceof TalkbackFragment) ? BluetoothService.MODE_TALKBACK : BluetoothService.MODE_CHAT;
-            bluetoothService.setMode(mode);
-            onConnectionStatusChanged(bluetoothService.getState(), bluetoothService.getConnectedDeviceName());
-            if (bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
-                bluetoothService.write((BluetoothService.TEXT_PREFIX + BluetoothService.CALL_HANGUP).getBytes());
-            }
+        // 发送挂断消息
+        if (bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
+            bluetoothService.write((BluetoothService.TEXT_PREFIX + BluetoothService.CALL_HANGUP).getBytes());
         }
 
-        getSupportFragmentManager().popBackStack();
+        // ★★★ 挂断后回到 ChatWorkFragment（如果有已连接设备）★★★
+        String address = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+        String name = bluetoothService != null ? bluetoothService.getConnectedDeviceName() : null;
+        if (address != null && name != null) {
+            // 先弹出当前 Fragment 回到上一级
+            getSupportFragmentManager().popBackStack();
+            // 然后切换到 ChatWorkFragment
+            switchToFragment("ChatWorkFragment", address, name);
+        } else {
+            // 没有连接，直接弹出
+            getSupportFragmentManager().popBackStack();
+        }
+
         updateStatusDisplay();
         callFragment = null;
         callTargetAddress = null;
@@ -952,6 +1005,7 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
             View view = inflater.inflate(R.layout.fragment_mine, container, false);
+
             Button btnName = view.findViewById(R.id.btnName);
             Button btnAbout = view.findViewById(R.id.btnAbout);
             btnName.setOnClickListener(v -> showNameDialog());
@@ -1004,9 +1058,25 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         }
 
         private void showAboutDialog() {
+            // 获取版本号（带异常保护）
+            String versionName = "未知版本";
+            try {
+                if (getActivity() != null) {
+                    versionName = getActivity()
+                            .getPackageManager()
+                            .getPackageInfo(getActivity().getPackageName(), 0)
+                            .versionName;
+                }
+            } catch (PackageManager.NameNotFoundException e) {
+                e.printStackTrace();
+            }
+
+            // 用占位符拼接完整文本
+            String aboutText = getString(R.string.about, versionName);
+
             new AlertDialog.Builder(getActivity(), R.style.CustomDialogTheme)
                     .setTitle("关于")
-                    .setMessage(R.string.about)
+                    .setMessage(aboutText)          // 这里传入 CharSequence，不再是资源 ID
                     .setPositiveButton("确定", null)
                     .show();
         }
