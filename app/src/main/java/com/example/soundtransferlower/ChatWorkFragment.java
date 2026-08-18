@@ -937,10 +937,45 @@ public class ChatWorkFragment extends Fragment implements
             if (this.deviceAddress != null && this.deviceAddress.equals(deviceAddress)) {
                 Log.d(TAG, "收到消息原始内容: [" + message + "]");
 
-                // ★★★ 先处理文件请求（优先于其他类型）★★★
+                // ★★★ 优先处理呼叫控制消息 ★★★
+                if (message.startsWith(BluetoothService.CALL_REQUEST)) {
+                    Log.d(TAG, "检测到呼叫请求消息");
+                    String callerName = message.substring(BluetoothService.CALL_REQUEST.length());
+                    if (callerName.isEmpty()) callerName = "未知用户";
+                    // 转发给主Activity处理
+                    if (getActivity() instanceof MainActivityNew) {
+                        ((MainActivityNew) getActivity()).onCallRequest(callerName, deviceAddress);
+                    }
+                    return;
+                }
+
+                if (message.equals(BluetoothService.CALL_ACCEPT)) {
+                    Log.d(TAG, "检测到呼叫接受消息");
+                    if (getActivity() instanceof MainActivityNew) {
+                        ((MainActivityNew) getActivity()).onCallAccepted(deviceAddress);
+                    }
+                    return;
+                }
+
+                if (message.equals(BluetoothService.CALL_REJECT)) {
+                    Log.d(TAG, "检测到呼叫拒绝消息");
+                    if (getActivity() instanceof MainActivityNew) {
+                        ((MainActivityNew) getActivity()).onCallRejected(deviceAddress);
+                    }
+                    return;
+                }
+
+                if (message.equals(BluetoothService.CALL_HANGUP)) {
+                    Log.d(TAG, "检测到呼叫挂断消息");
+                    if (getActivity() instanceof MainActivityNew) {
+                        ((MainActivityNew) getActivity()).onCallHungUp(deviceAddress);
+                    }
+                    return;
+                }
+
+                // ★★★ 处理文件请求 ★★★
                 if (message.startsWith(FILE_REQUEST_PREFIX)) {
                     Log.d(TAG, "检测到文件请求消息");
-                    // 去重
                     if (processedMessages.contains(message)) {
                         Log.d(TAG, "重复文件请求消息，已忽略");
                         return;
@@ -950,7 +985,6 @@ public class ChatWorkFragment extends Fragment implements
                         processedMessages.remove(message);
                     }, 5000);
 
-                    // 解析文件名和大小（可能包含语音标记）
                     String[] parts = message.substring(FILE_REQUEST_PREFIX.length()).split(",");
                     if (parts.length >= 2) {
                         String fileName = parts[0];
@@ -966,10 +1000,8 @@ public class ChatWorkFragment extends Fragment implements
                             duration = Integer.parseInt(parts[3]);
                         }
                         handleFileRequest(fileName, size, duration);
-                    } else {
-                        Log.e(TAG, "文件请求格式错误: " + message);
                     }
-                    return; // 不再继续处理
+                    return;
                 }
 
                 // ★★★ 处理召唤消息 ★★★
@@ -1000,7 +1032,7 @@ public class ChatWorkFragment extends Fragment implements
                     return;
                 }
 
-                // ★★★ 普通文本消息 ★★★
+                // ★★★ 普通文本消息（去重） ★★★
                 boolean exists = false;
                 long now = new Date().getTime();
                 for (Message msg : messageList) {
@@ -1018,7 +1050,6 @@ public class ChatWorkFragment extends Fragment implements
             }
         });
     }
-
     @Override
     public void onConnectionStatusChanged(int state, String deviceName) {
         if (getActivity() == null) return;
@@ -1334,14 +1365,32 @@ public class ChatWorkFragment extends Fragment implements
         }
     }
     // 在 ChatWorkFragment 中添加
+    // ==================== 呼叫回调（转发给主Activity） ====================
     @Override
     public void onCallRequest(String callerName, String deviceAddress) {
-        // 由主Activity处理
+        if (getActivity() instanceof MainActivityNew) {
+            ((MainActivityNew) getActivity()).onCallRequest(callerName, deviceAddress);
+        }
     }
+
     @Override
-    public void onCallAccepted(String deviceAddress) {}
+    public void onCallAccepted(String deviceAddress) {
+        if (getActivity() instanceof MainActivityNew) {
+            ((MainActivityNew) getActivity()).onCallAccepted(deviceAddress);
+        }
+    }
+
     @Override
-    public void onCallRejected(String deviceAddress) {}
+    public void onCallRejected(String deviceAddress) {
+        if (getActivity() instanceof MainActivityNew) {
+            ((MainActivityNew) getActivity()).onCallRejected(deviceAddress);
+        }
+    }
+
     @Override
-    public void onCallHungUp(String deviceAddress) {}
+    public void onCallHungUp(String deviceAddress) {
+        if (getActivity() instanceof MainActivityNew) {
+            ((MainActivityNew) getActivity()).onCallHungUp(deviceAddress);
+        }
+    }
 }
