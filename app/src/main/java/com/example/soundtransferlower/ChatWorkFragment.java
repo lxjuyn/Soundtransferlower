@@ -74,7 +74,7 @@ public class ChatWorkFragment extends Fragment implements
     private boolean isVoicePlaying = false;
     private Message currentPlayingVoice = null;
     private int playingPosition = -1;
-    private Handler voiceBlinkHandler = new Handler();
+    private Handler voiceBlinkHandler = new Handler(Looper.getMainLooper());
     private Runnable voiceBlinkRunnable;
     // UI
     private TextView tvDeviceName;
@@ -97,7 +97,7 @@ public class ChatWorkFragment extends Fragment implements
 
     // 删除
     private boolean deleteConfirmation = false;
-    private Handler deleteHandler = new Handler();
+    private Handler deleteHandler = new Handler(Looper.getMainLooper());
     private Runnable deleteResetRunnable = () -> { deleteConfirmation = false; Toast.makeText(getActivity(), "删除操作已取消", Toast.LENGTH_SHORT).show(); };
 
     // 文件发送

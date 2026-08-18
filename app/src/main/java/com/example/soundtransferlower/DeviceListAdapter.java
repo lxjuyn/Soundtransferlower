@@ -36,13 +36,19 @@ public class DeviceListAdapter extends ArrayAdapter<BluetoothDevice> {
         if (device != null) {
             TextView deviceName = convertView.findViewById(R.id.deviceName);
             TextView deviceAddress = convertView.findViewById(R.id.deviceAddress);
-
+            TextView avatar = convertView.findViewById(R.id.avatar);
             String name = device.getName();
             if (name == null || name.isEmpty()) {
                 name = "未知设备";
             }
             deviceName.setText(name);
             deviceAddress.setText(device.getAddress());
+            int textColor = device.getBondState() == BluetoothDevice.BOND_BONDED ?
+                    parent.getContext().getResources().getColor(android.R.color.black) :
+                    parent.getContext().getResources().getColor(android.R.color.darker_gray);
+            deviceName.setTextColor(textColor);
+            deviceAddress.setTextColor(parent.getContext().getResources().getColor(android.R.color.darker_gray));
+            if (avatar != null) avatar.setText("蓝牙");
         }
 
         return convertView;

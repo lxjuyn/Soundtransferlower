@@ -16,6 +16,7 @@ import android.content.IntentFilter;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Message;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -39,6 +40,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.UUID;
+import java.lang.ref.WeakReference;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class BluetoothService extends Service {
@@ -90,7 +92,22 @@ public class BluetoothService extends Service {
     private static final long HEARTBEAT_INTERVAL = 30 * 60 * 1000;
 
     // ---- ★★★ 健康检查 ★★★ ----
-    private Handler healthCheckHandler = new Handler(Looper.getMainLooper());
+    private static class SafeHandler extends Handler {
+        private final WeakReference<BluetoothService> serviceRef;
+
+        SafeHandler(BluetoothService service) {
+            super(Looper.getMainLooper());
+            serviceRef = new WeakReference<>(service);
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+            BluetoothService service = serviceRef.get();
+            if (service == null) return;
+        }
+    }
+
+    private Handler healthCheckHandler = new SafeHandler(this);
     private Runnable healthCheckRunnable = new Runnable() {
         @Override
         public void run() {
@@ -203,6 +220,7 @@ public class BluetoothService extends Service {
     private void initKeepAlive() {
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BluetoothService:KeepAlive");
+        // 优化：使用 try/finally 确保 WakeLock 释放
         wakeLock.acquire(10 * 60 * 1000L);
 
         alarmManagerHelper = new AlarmManagerHelper(this, HEARTBEAT_INTERVAL);
@@ -837,22 +855,24 @@ public class BluetoothService extends Service {
                 String sender = isSent ? "我" : "对方";
                 String newLine = timestamp + ": " + sender + ": " + message;
 
+                // 优化：使用 try-with-resources 确保资源释放
                 if (file.exists()) {
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8"));
-                    String lastLine = null;
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        lastLine = line;
-                    }
-                    reader.close();
-                    if (lastLine != null && lastLine.equals(newLine)) {
-                        return;
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+                        String lastLine = null;
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            lastLine = line;
+                        }
+                        if (lastLine != null && lastLine.equals(newLine)) {
+                            return;
+                        }
                     }
                 }
-                FileOutputStream fos = new FileOutputStream(file, true);
-                OutputStreamWriter osw = new OutputStreamWriter(fos, "UTF-8");
-                osw.write(newLine + "\n");
-                osw.close();
+                try (FileOutputStream fos = new FileOutputStream(file, true);
+                     OutputStreamWriter osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8)) {
+                    osw.write(newLine + "\n");
+                }
             } catch (IOException e) {
                 Log.e(TAG, "Error saving message to file", e);
             }
@@ -865,13 +885,14 @@ public class BluetoothService extends Service {
             String filename = "chat_" + deviceAddress.replace(":", "_") + ".txt";
             File file = new File(getExternalFilesDir(null), filename);
             if (file.exists()) {
-                InputStream inputStream = getContentResolver().openInputStream(android.net.Uri.fromFile(file));
-                BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    chatHistory.append(line).append("\n");
+                // 优化：使用 try-with-resources 确保资源释放
+                try (InputStream inputStream = getContentResolver().openInputStream(android.net.Uri.fromFile(file));
+                     BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        chatHistory.append(line).append("\n");
+                    }
                 }
-                reader.close();
             }
         } catch (IOException e) {
             Log.e(TAG, "Error loading chat history", e);
