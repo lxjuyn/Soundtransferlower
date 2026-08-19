@@ -65,7 +65,7 @@ public class ChatWorkFragment extends Fragment implements
     private static final String TAG = "ChatWorkFragment";
     private static final int REQUEST_CODE_PICK_FILE = 1001;
     private static final int REQUEST_STORAGE_PERMISSION = 1002;
-    private static final int REQUEST_CODE_EXPORT_CHAT = 1003;
+    private static final int REQUEST_CODE_EXPORT_CHAT = 1004;
     private static final String FILE_REQUEST_PREFIX = "FILE_REQUEST:";
     private static final String FILE_ACCEPT = "FILE_ACCEPT";
     private static final String FILE_REJECT = "FILE_REJECT";
@@ -691,12 +691,18 @@ public class ChatWorkFragment extends Fragment implements
         isFileSender = false;
         Intent intent = new Intent(getActivity(), BluetoothFileTransferService.class);
         intent.putExtra("ACTION", "RECEIVE");
-        intent.putExtra("SAVE_DIR", getActivity().getExternalFilesDir(null) + "/files");
+        File filesDir = FileHelper.getFileStorageDir(getActivity());
+        intent.putExtra("SAVE_DIR", filesDir != null ? filesDir.getAbsolutePath() : getActivity().getExternalFilesDir(null) + "/files");
         // ★★★ 关键：传递文件名（用于接收端保存）★★★
         if (pendingReceiveFileName != null) {
             intent.putExtra("FILE_NAME", pendingReceiveFileName);
         }
-        getActivity().startService(intent);
+        // Android 8.0 (API 26) 起后台限制：使用 startForegroundService() 替代 startService()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            getActivity().startForegroundService(intent);
+        } else {
+            getActivity().startService(intent);
+        }
         getActivity().bindService(intent, fileTransferConnection, Context.BIND_AUTO_CREATE);
         Toast.makeText(getActivity(), "开始接收文件...", Toast.LENGTH_SHORT).show();
     }
@@ -722,7 +728,12 @@ public class ChatWorkFragment extends Fragment implements
         intent.putExtra("DEVICE_ADDRESS", deviceAddress);
         intent.putExtra("FILE_PATH", filePath);
         intent.putExtra("FILE_NAME", fileName);
-        getActivity().startService(intent);
+        // Android 8.0 (API 26) 起后台限制：使用 startForegroundService() 替代 startService()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            getActivity().startForegroundService(intent);
+        } else {
+            getActivity().startService(intent);
+        }
         getActivity().bindService(intent, fileTransferConnection, Context.BIND_AUTO_CREATE);
         Toast.makeText(getActivity(), "开始发送文件...", Toast.LENGTH_SHORT).show();
     }
@@ -781,8 +792,8 @@ public class ChatWorkFragment extends Fragment implements
             });
         }
         try {
-            File voiceDir = new File(getActivity().getExternalFilesDir(null), "voices");
-            if (!voiceDir.exists() && !voiceDir.mkdirs()) {
+            File voiceDir = FileHelper.getVoiceStorageDir(getActivity());
+            if (voiceDir == null) {
                 Toast.makeText(getActivity(), "无法创建语音目录", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -1304,8 +1315,10 @@ public class ChatWorkFragment extends Fragment implements
     private void updateChatHistoryFile() {
         if (deviceAddress == null || getActivity() == null) return;
         try {
+            File chatDir = FileHelper.getChatDir(getActivity());
+            if (chatDir == null) { Log.e(TAG, "无法获取聊天记录目录"); return; }
             String filename = "chat_" + deviceAddress.replace(":", "_") + ".txt";
-            File file = new File(getActivity().getExternalFilesDir(null), filename);
+            File file = new File(chatDir, filename);
             if (file.exists()) file.delete();
             if (!messageList.isEmpty()) {
                 file.createNewFile();
@@ -1413,9 +1426,12 @@ public class ChatWorkFragment extends Fragment implements
         }
         messageList.clear();
         messageAdapter.notifyDataSetChanged();
-        String filename = "chat_" + deviceAddress.replace(":", "_") + ".txt";
-        File historyFile = new File(getActivity().getExternalFilesDir(null), filename);
-        if (historyFile.exists()) historyFile.delete();
+        File chatDir = FileHelper.getChatDir(getActivity());
+        if (chatDir != null) {
+            String filename = "chat_" + deviceAddress.replace(":", "_") + ".txt";
+            File historyFile = new File(chatDir, filename);
+            if (historyFile.exists()) historyFile.delete();
+        }
         deleteConfirmation = false;
         deleteHandler.removeCallbacks(deleteResetRunnable);
         Toast.makeText(getActivity(), "聊天记录及所有文件已彻底删除", Toast.LENGTH_SHORT).show();
@@ -1508,8 +1524,8 @@ public class ChatWorkFragment extends Fragment implements
     private String saveFileToLocalFromStream(InputStream inputStream, String fileName) {
         // 优化：使用 try-with-resources 确保资源释放
         try (InputStream is = inputStream) {
-            File dir = new File(getActivity().getExternalFilesDir(null), "files");
-            if (!dir.exists()) dir.mkdirs();
+            File dir = FileHelper.getFileStorageDir(getActivity());
+            if (dir == null) { Log.e(TAG, "无法获取文件存储目录"); return null; }
             String timeStamp = String.valueOf(System.currentTimeMillis());
             File file = new File(dir, timeStamp + "_" + fileName);
             try (FileOutputStream fos = new FileOutputStream(file)) {

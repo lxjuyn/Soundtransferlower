@@ -251,6 +251,10 @@ public class BluetoothService extends Service {
             public void onReceive(Context context, Intent intent) {
                 Log.d(TAG, "Alarm triggered, restarting service...");
                 compatStartForegroundService(context, new Intent(context, BluetoothService.class));
+                // setExact* 是一次性闹钟，触发后需要重新注册
+                if (alarmManagerHelper != null) {
+                    alarmManagerHelper.startAlarm();
+                }
                 if (wakeLock != null && !wakeLock.isHeld()) {
                     wakeLock.acquire(10 * 60 * 1000L);
                 }
