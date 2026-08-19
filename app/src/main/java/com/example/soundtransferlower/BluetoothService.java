@@ -91,6 +91,16 @@ public class BluetoothService extends Service {
     private static final int NOTIFICATION_ID = 1001;
     private static final long HEARTBEAT_INTERVAL = 30 * 60 * 1000;
 
+    // ---- 优化：连接超时和重连机制 ----
+    private static final int CONNECT_TIMEOUT_MS = 15000; // 15秒连接超时
+    private static final int MAX_RECONNECT_ATTEMPTS = 5; // 最大重连次数
+    private static final long RECONNECT_BASE_DELAY_MS = 1000; // 初始重连延迟1秒
+    private static final long RECONNECT_MAX_DELAY_MS = 30000; // 最大重连延迟30秒
+    private int reconnectAttempts = 0;
+    private String lastDisconnectedAddress = null;
+    private Handler reconnectHandler;
+    private Runnable reconnectRunnable;
+
     // ---- ★★★ 健康检查 ★★★ ----
     private static class SafeHandler extends Handler {
         private final WeakReference<BluetoothService> serviceRef;
@@ -160,6 +170,8 @@ public class BluetoothService extends Service {
         startHeartbeat();
         // 启动健康检查
         healthCheckHandler.post(healthCheckRunnable);
+        // 优化：初始化重连处理器
+        reconnectHandler = new Handler(Looper.getMainLooper());
         // 注意：不自动start，由MainActivity控制
     }
 
@@ -175,6 +187,10 @@ public class BluetoothService extends Service {
     public void onDestroy() {
         super.onDestroy();
         healthCheckHandler.removeCallbacks(healthCheckRunnable);
+        // 优化：清理重连处理器
+        if (reconnectHandler != null) {
+            reconnectHandler.removeCallbacksAndMessages(null);
+        }
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
         }
@@ -462,11 +478,17 @@ public class BluetoothService extends Service {
         isInitiator = false;
         targetDeviceAddress = null;
 
+        // 优化：连接成功，重置重连状态
+        cancelReconnect();
+
         notifyConnectionStatusChanged(STATE_CONNECTED, device.getName());
         setState(STATE_CONNECTED);
     }
 
     public synchronized void stop() {
+        // 优化：停止时取消重连尝试
+        cancelReconnect();
+
         if (connectThread != null) {
             connectThread.cancel();
             connectThread = null;
@@ -583,11 +605,75 @@ public class BluetoothService extends Service {
     }
 
     private void connectionLost() {
+        Log.w(TAG, "连接断开，尝试自动重连");
         notifyConnectionStatusChanged(STATE_LISTEN, "连接断开");
+
+        // 保存断开连接的设备地址，用于自动重连
+        if (connectedDeviceAddress != null) {
+            lastDisconnectedAddress = connectedDeviceAddress;
+        }
+
         isInitiator = false;
         targetDeviceAddress = null;
         setState(STATE_LISTEN);
-        BluetoothService.this.start();
+
+        // 优化：触发自动重连
+        scheduleReconnect();
+    }
+
+    // ==================== 优化：自动重连机制 ====================
+    /**
+     * 调度自动重连，使用指数退避算法
+     */
+    private void scheduleReconnect() {
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            Log.w(TAG, "已达到最大重连次数 " + MAX_RECONNECT_ATTEMPTS + "，停止重连");
+            reconnectAttempts = 0;
+            lastDisconnectedAddress = null;
+            return;
+        }
+
+        if (lastDisconnectedAddress == null) {
+            Log.d(TAG, "无断开连接的设备，跳过重连");
+            return;
+        }
+
+        // 计算退避延迟：指数增长，上限为最大延迟
+        long delay = Math.min(
+                RECONNECT_BASE_DELAY_MS * (1L << reconnectAttempts),
+                RECONNECT_MAX_DELAY_MS
+        );
+
+        reconnectAttempts++;
+        Log.d(TAG, "将在 " + delay + "ms 后尝试第 " + reconnectAttempts + " 次重连，目标: " + lastDisconnectedAddress);
+
+        reconnectRunnable = () -> {
+            if (state == STATE_NONE || state == STATE_LISTEN) {
+                try {
+                    BluetoothDevice device = bluetoothAdapter.getRemoteDevice(lastDisconnectedAddress);
+                    Log.d(TAG, "尝试重连到: " + lastDisconnectedAddress);
+                    connect(device);
+                } catch (Exception e) {
+                    Log.e(TAG, "重连失败: " + e.getMessage());
+                    scheduleReconnect(); // 继续尝试
+                }
+            }
+        };
+
+        if (reconnectHandler != null) {
+            reconnectHandler.postDelayed(reconnectRunnable, delay);
+        }
+    }
+
+    /**
+     * 取消重连尝试
+     */
+    private void cancelReconnect() {
+        if (reconnectHandler != null && reconnectRunnable != null) {
+            reconnectHandler.removeCallbacks(reconnectRunnable);
+        }
+        reconnectAttempts = 0;
+        lastDisconnectedAddress = null;
     }
 
     // ==================== 内部线程 ====================
@@ -661,6 +747,7 @@ public class BluetoothService extends Service {
     private class ConnectThread extends Thread {
         private final BluetoothSocket socket;
         private final BluetoothDevice device;
+        private volatile boolean isConnected = false;
 
         public ConnectThread(BluetoothDevice device) {
             this.device = device;
@@ -684,9 +771,32 @@ public class BluetoothService extends Service {
                 connectionFailed();
                 return;
             }
+
+            // 优化：添加连接超时机制
+            Thread timeoutThread = new Thread(() -> {
+                try {
+                    Thread.sleep(CONNECT_TIMEOUT_MS);
+                    if (!isConnected && !isInterrupted()) {
+                        Log.w(TAG, "连接超时 (" + CONNECT_TIMEOUT_MS + "ms)");
+                        try {
+                            socket.close();
+                        } catch (IOException e) {
+                            Log.e(TAG, "关闭超时socket失败", e);
+                        }
+                        connectionFailed();
+                    }
+                } catch (InterruptedException e) {
+                    // 超时线程被中断，正常退出
+                }
+            });
+            timeoutThread.start();
+
             try {
                 socket.connect();
+                isConnected = true;
+                timeoutThread.interrupt(); // 连接成功，取消超时检查
             } catch (IOException e) {
+                timeoutThread.interrupt();
                 connectionFailed();
                 try {
                     socket.close();
