@@ -19,9 +19,9 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.app.Fragment;
-import android.support.v4.content.ContextCompat;
+import androidx.core.app.ActivityCompat;
+import androidx.fragment.app.Fragment;
+import androidx.core.content.ContextCompat;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -42,6 +42,7 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
     private boolean isTalkButtonDisabled = false;
     private static final String TAG = "TalkbackFragment";
     private static final int REQUEST_BLUETOOTH_PERMISSIONS = 1;
+    private static final int REQUEST_TALK_PERMISSIONS = 2;
     private static final long RECEIVE_TIMEOUT = 800;
     private boolean isLoading = true;
     private static final long INACTIVITY_THRESHOLD_DISCONNECT = 50000;
@@ -618,10 +619,66 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
 
     private void startTalking() {
         if (!isConnectionActive || isRecording) return;
+
+        // 检查录音和蓝牙权限
+        if (!checkTalkPermissions()) {
+            return;
+        }
+
         Log.d(TAG, "开始说话");
         setState(STATE_TALKING);
         audioRecorderPlayer.startRecording();
         isRecording = true;
+    }
+
+    /**
+     * 检查对讲所需的权限（录音+蓝牙）
+     * @return true 表示所有权限已授予
+     */
+    private boolean checkTalkPermissions() {
+        String[] permissions;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            // Android 12 (API 31) 及以上
+            permissions = new String[]{
+                android.Manifest.permission.RECORD_AUDIO,
+                android.Manifest.permission.BLUETOOTH_CONNECT
+            };
+        } else {
+            // Android 11 及以下
+            permissions = new String[]{
+                android.Manifest.permission.RECORD_AUDIO,
+                android.Manifest.permission.BLUETOOTH
+            };
+        }
+
+        List<String> deniedPermissions = PermissionHelper.getDeniedPermissions(getActivity(), permissions);
+        if (!deniedPermissions.isEmpty()) {
+            PermissionHelper.requestPermissions(getActivity(),
+                deniedPermissions.toArray(new String[0]),
+                REQUEST_TALK_PERMISSIONS);
+            return false;
+        }
+        return true;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_TALK_PERMISSIONS) {
+            boolean allGranted = true;
+            for (int result : grantResults) {
+                if (result != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    break;
+                }
+            }
+            if (allGranted) {
+                // 权限已授予，可以开始对讲
+                startTalking();
+            } else {
+                Toast.makeText(getActivity(), "需要录音和蓝牙权限才能使用对讲功能", Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void stopTalking() {

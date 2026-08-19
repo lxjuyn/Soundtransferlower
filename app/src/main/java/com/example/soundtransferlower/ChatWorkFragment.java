@@ -22,12 +22,12 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.provider.MediaStore;
-import android.support.v4.app.Fragment;
-import android.support.v4.content.FileProvider;
-import android.support.v7.app.AppCompatDelegate;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.PopupMenu;
-import android.support.v7.widget.RecyclerView;
+import androidx.fragment.app.Fragment;
+import androidx.core.content.FileProvider;
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.appcompat.widget.PopupMenu;
+import androidx.recyclerview.widget.RecyclerView;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -64,6 +64,7 @@ public class ChatWorkFragment extends Fragment implements
     private static final long MAX_MEMORY_FILE_SIZE = 50 * 1024 * 1024; // 50MB，超过则流式复制
     private static final String TAG = "ChatWorkFragment";
     private static final int REQUEST_CODE_PICK_FILE = 1001;
+    private static final int REQUEST_STORAGE_PERMISSION = 1002;
     private static final String FILE_REQUEST_PREFIX = "FILE_REQUEST:";
     private static final String FILE_ACCEPT = "FILE_ACCEPT";
     private static final String FILE_REJECT = "FILE_REJECT";
@@ -381,22 +382,42 @@ public class ChatWorkFragment extends Fragment implements
         if (srcPath == null) { Toast.makeText(getActivity(), "文件路径无效", Toast.LENGTH_SHORT).show(); return; }
         File srcFile = new File(srcPath);
         if (!srcFile.exists()) { Toast.makeText(getActivity(), "文件不存在", Toast.LENGTH_SHORT).show(); return; }
+
+        // Scoped Storage (API 29+): 使用 MediaStore API
+        if (FileHelper.isScopedStorage()) {
+            try {
+                String fileName = message.getFileName();
+                String mimeType = FileHelper.getMimeType(fileName);
+
+                java.io.InputStream fis = new FileInputStream(srcFile);
+                Uri savedUri;
+                if (message.getType() == Message.TYPE_IMAGE) {
+                    savedUri = FileHelper.saveToDCIMViaMediaStore(getActivity(), fileName, fis, mimeType);
+                } else {
+                    savedUri = FileHelper.saveToDownloadsViaMediaStore(getActivity(), fileName, fis, mimeType);
+                }
+                fis.close();
+
+                if (savedUri != null) {
+                    Toast.makeText(getActivity(), "已保存到: " + savedUri.getPath(), Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(getActivity(), "保存失败: 无法创建文件", Toast.LENGTH_SHORT).show();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "通过 MediaStore 保存文件失败", e);
+                Toast.makeText(getActivity(), "保存失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        // API < 29: 直接写入公共目录
         try {
             File destDir;
-            if (message.getType() == Message.TYPE_IMAGE) destDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM);
-            else destDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            if (message.getType() == Message.TYPE_IMAGE) destDir = FileHelper.getDCIMDir();
+            else destDir = FileHelper.getDownloadDir();
             if (!destDir.exists() && !destDir.mkdirs()) { Toast.makeText(getActivity(), "无法创建目录", Toast.LENGTH_SHORT).show(); return; }
-            String originalName = message.getFileName();
-            File destFile = new File(destDir, originalName);
-            int count = 1;
-            while (destFile.exists()) {
-                String name = originalName;
-                int dotIndex = originalName.lastIndexOf('.');
-                if (dotIndex > 0) name = originalName.substring(0, dotIndex) + "_" + count + originalName.substring(dotIndex);
-                else name = originalName + "_" + count;
-                destFile = new File(destDir, name);
-                count++;
-            }
+            String uniqueName = FileHelper.generateUniqueFileName(destDir, message.getFileName());
+            File destFile = new File(destDir, uniqueName);
             FileInputStream fis = null;
             FileOutputStream fos = null;
             try {
@@ -463,9 +484,38 @@ public class ChatWorkFragment extends Fragment implements
             }
             return;
         }
+
+        // 检查存储权限
+        if (!PermissionHelper.hasPermission(getActivity(), android.Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+            PermissionHelper.requestPermissions(getActivity(),
+                new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                REQUEST_STORAGE_PERMISSION);
+            return;
+        }
+
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
         intent.setType("*/*");
         startActivityForResult(Intent.createChooser(intent, "选择文件"), REQUEST_CODE_PICK_FILE);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_STORAGE_PERMISSION) {
+            if (grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                // 权限已授予，继续发送文件
+                sendFile();
+            } else {
+                Toast.makeText(getActivity(), "需要存储权限才能发送文件", Toast.LENGTH_SHORT).show();
+            }
+        } else if (requestCode == REQUEST_RECORD_AUDIO_PERMISSION) {
+            if (grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                // 权限已授予，继续录音
+                startVoiceRecording();
+            } else {
+                Toast.makeText(getActivity(), "需要录音权限才能录制语音", Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 
     @Override
@@ -656,7 +706,17 @@ public class ChatWorkFragment extends Fragment implements
     }
 
     // ==================== 语音录音 ====================
+    private static final int REQUEST_RECORD_AUDIO_PERMISSION = 1003;
+
     private void startVoiceRecording() {
+        // 检查录音权限
+        if (!PermissionHelper.hasPermission(getActivity(), android.Manifest.permission.RECORD_AUDIO)) {
+            PermissionHelper.requestPermissions(getActivity(),
+                new String[]{android.Manifest.permission.RECORD_AUDIO},
+                REQUEST_RECORD_AUDIO_PERMISSION);
+            return;
+        }
+
         if (voiceRecorder == null) {
             voiceRecorder = new VoiceRecorder(new VoiceRecorder.OnVoiceRecordListener() {
                 @Override

@@ -17,12 +17,12 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.IBinder;
 import android.os.Looper;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentActivity;
-import android.support.v4.app.FragmentManager;
-import android.support.v4.app.FragmentTransaction;
-import android.support.v7.app.AppCompatDelegate;
-import android.support.v7.widget.PopupMenu;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentActivity;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentTransaction;
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.appcompat.widget.PopupMenu;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -53,6 +53,7 @@ import java.util.Locale;
 import java.util.Set;
 
 public class MainActivityNew extends FragmentActivity implements BluetoothService.MessageCallback {
+    private static final int REQUEST_PERMISSIONS = 1001;
     private ImageButton btnBack;
     private ImageButton btnMenu;
     private BluetoothFinder bluetoothFinder;
@@ -134,6 +135,9 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main_new);
+
+        // 请求蓝牙和位置权限
+        requestBluetoothAndLocationPermissions();
 
         Intent intent = getIntent();
         if (intent != null) {
@@ -243,6 +247,48 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             emptyHint.setVisibility(View.VISIBLE);
         } else {
             emptyHint.setVisibility(View.GONE);
+        }
+    }
+
+    /**
+     * 请求蓝牙和位置权限
+     */
+    private void requestBluetoothAndLocationPermissions() {
+        String[] permissions;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            // Android 12 (API 31) 及以上
+            permissions = new String[]{
+                android.Manifest.permission.BLUETOOTH_CONNECT,
+                android.Manifest.permission.BLUETOOTH_SCAN
+            };
+        } else {
+            // Android 11 及以下
+            permissions = new String[]{
+                android.Manifest.permission.BLUETOOTH,
+                android.Manifest.permission.BLUETOOTH_ADMIN,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            };
+        }
+
+        List<String> deniedPermissions = PermissionHelper.getDeniedPermissions(this, permissions);
+        if (!deniedPermissions.isEmpty()) {
+            PermissionHelper.requestPermissions(this, deniedPermissions.toArray(new String[0]), REQUEST_PERMISSIONS);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_PERMISSIONS) {
+            // 权限已请求，可以继续执行需要权限的操作
+            for (int i = 0; i < permissions.length; i++) {
+                if (grantResults[i] == PackageManager.PERMISSION_GRANTED) {
+                    Log.d(TAG, "权限已授予: " + permissions[i]);
+                } else {
+                    Log.w(TAG, "权限被拒绝: " + permissions[i]);
+                    Toast.makeText(this, "需要 " + permissions[i] + " 权限才能正常使用", Toast.LENGTH_SHORT).show();
+                }
+            }
         }
     }
 
