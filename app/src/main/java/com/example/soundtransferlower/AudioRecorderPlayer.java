@@ -23,11 +23,12 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 public class AudioRecorderPlayer {
     private static final String TAG = "AudioRecorderPlayer";
-    private static final int SAMPLE_RATE = 8000;
+    // 优化：提升采样率到16kHz，支持宽带语音（HD Voice质量）
+    private static final int SAMPLE_RATE = 16000;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
 
-    // 每帧采样数（40ms @ 8kHz），对应 PCM 字节数 640
+    // 每帧采样数（20ms @ 16kHz），对应 PCM 字节数 640
     private static final int FRAME_SAMPLES = 320;
     private static final int PCM_BYTES_PER_FRAME = FRAME_SAMPLES * 2; // 640
     private static final int MAX_OPUS_BYTES = 1024;
@@ -97,9 +98,14 @@ public class AudioRecorderPlayer {
     private void initOpusCodecs() {
         try {
             opusEncoder = new OpusEncoder(SAMPLE_RATE, 1, OpusApplication.OPUS_APPLICATION_VOIP);
-            opusEncoder.setBitrate(16000); // 16 kbps
+            // 优化：提升比特率到24kbps，支持宽带语音
+            opusEncoder.setBitrate(24000); // 24 kbps for wideband speech
+            // 优化：启用FEC（前向纠错），提升抗丢包能力
+            opusEncoder.setInBandFEC(true);
+            // 优化：设置复杂度为5，平衡CPU使用和编码质量
+            opusEncoder.setComplexity(5);
             opusDecoder = new OpusDecoder(SAMPLE_RATE, 1);
-            Log.d(TAG, "Opus 编解码器初始化成功");
+            Log.d(TAG, "Opus 编解码器初始化成功 (16kHz, 24kbps, FEC enabled)");
         } catch (OpusException e) {
             Log.e(TAG, "Opus 初始化失败: " + e.getMessage());
         }
