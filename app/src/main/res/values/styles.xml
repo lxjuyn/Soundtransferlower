@@ -19,6 +19,7 @@
     </style>
 
     <!-- MD3 Typography -->
+    <style name="MD3" />
     <style name="MD3.DisplayLarge">
         <item name="android:textSize">57sp</item>
         <item name="android:lineHeight">64sp</item>
