@@ -56,8 +56,12 @@
         </activity>
 
         <!-- 只注册一次服务 -->
-        <service android:name=".BluetoothService" android:enabled="true" android:exported="true" />
-        <service android:name=".BluetoothFileTransferService" />
+        <service android:name=".BluetoothService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="connectedDevice" />
+        <service android:name=".BluetoothFileTransferService"
+            android:foregroundServiceType="dataSync" />
 
         <provider
             android:name="android.support.v4.content.FileProvider"
