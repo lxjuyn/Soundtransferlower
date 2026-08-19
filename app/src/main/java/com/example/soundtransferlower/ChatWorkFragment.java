@@ -157,14 +157,19 @@ public class ChatWorkFragment extends Fragment implements
             if (deviceAddress != null) {
                 String currentAddress = bluetoothService.getConnectedDeviceAddress();
                 if (currentAddress != null && currentAddress.equals(deviceAddress)) {
+                    // ★★★ 已连接到目标设备，直接加载历史 ★★★
                     loadChatHistory();
-                } else {
+                    historyLoaded = true;
+                    updateConnectionUI(true, deviceName);
+                } else if (!bluetoothService.isConnected()) {
+                    // ★★★ 未连接，尝试连接 ★★★
                     BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
                     if (adapter != null) {
                         BluetoothDevice device = adapter.getRemoteDevice(deviceAddress);
                         bluetoothService.connect(device);
                     }
                 }
+                // ★★★ 如果已连接到其他设备，不主动断开，等 onResume 中再处理 ★★★
             }
         }
         @Override
