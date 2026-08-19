@@ -148,7 +148,12 @@ public class BluetoothService extends Service {
         state = STATE_NONE;
         createNotificationChannelIfNeeded(); // 统一创建通知渠道
         initKeepAlive();
-        startForeground(NOTIFICATION_ID, createForegroundNotification());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, createForegroundNotification(),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+        } else {
+            startForeground(NOTIFICATION_ID, createForegroundNotification());
+        }
         registerScreenReceiver();
         startHeartbeat();
         // 启动健康检查
@@ -189,10 +194,10 @@ public class BluetoothService extends Service {
             NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             if (nm != null) {
                 // 普通前台服务渠道
-                NotificationChannel serviceChannel = nm.getNotificationChannel("bluetooth_channel");
+                NotificationChannel serviceChannel = nm.getNotificationChannel("bluetooth_service");
                 if (serviceChannel == null) {
                     serviceChannel = new NotificationChannel(
-                            "bluetooth_channel",
+                            "bluetooth_service",
                             "蓝牙服务",
                             NotificationManager.IMPORTANCE_LOW
                     );
@@ -260,7 +265,7 @@ public class BluetoothService extends Service {
     private Notification createForegroundNotification() {
         Notification notification;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notification = new Notification.Builder(this, "bluetooth_channel")
+            notification = new Notification.Builder(this, "bluetooth_service")
                     .setSmallIcon(android.R.drawable.ic_dialog_info)
                     .setContentTitle("蓝牙服务运行中")
                     .setContentText("等待连接...")
