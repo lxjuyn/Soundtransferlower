@@ -260,7 +260,8 @@ public class BluetoothService extends Service {
                 }
             }
         };
-        registerReceiver(alarmReceiver, new IntentFilter(AlarmManagerHelper.ACTION_RESTART_SERVICE));
+        registerReceiver(alarmReceiver, new IntentFilter(AlarmManagerHelper.ACTION_RESTART_SERVICE),
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ? Context.RECEIVER_NOT_EXPORTED : 0);
     }
 
     private void registerScreenReceiver() {
@@ -273,7 +274,8 @@ public class BluetoothService extends Service {
                 }
             }
         };
-        registerReceiver(screenReceiver, new IntentFilter(Intent.ACTION_SCREEN_ON));
+        registerReceiver(screenReceiver, new IntentFilter(Intent.ACTION_SCREEN_ON),
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ? Context.RECEIVER_NOT_EXPORTED : 0);
     }
 
     private void startHeartbeat() {

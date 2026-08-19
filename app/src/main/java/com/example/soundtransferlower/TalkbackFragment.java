@@ -377,7 +377,11 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         filter.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
         filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
         filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED);
-        getActivity().registerReceiver(bluetoothReceiver, filter);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getActivity().registerReceiver(bluetoothReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            getActivity().registerReceiver(bluetoothReceiver, filter);
+        }
     }
 
     private void initAudio() {
