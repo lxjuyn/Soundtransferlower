@@ -1402,32 +1402,47 @@ public class ChatWorkFragment extends Fragment implements
     // ==================== 导出 ====================
     private void exportChatHistory() {
         if (messageList.isEmpty()) { Toast.makeText(getActivity(), "没有聊天记录可导出", Toast.LENGTH_SHORT).show(); return; }
+
+        String safeDeviceName = (deviceName != null) ? deviceName.replaceAll("[^a-zA-Z0-9.-]", "_") : "unknown";
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
+        String timestamp = sdf.format(new Date());
+        String exportFileName = "chat_" + safeDeviceName + "_" + timestamp + ".txt";
+
+        // 构建导出内容
+        StringBuilder exportContent = new StringBuilder();
+        exportContent.append("聊天记录导出 - ").append(deviceName != null ? deviceName : "未知设备").append("\n");
+        exportContent.append("导出时间: ").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date())).append("\n\n");
+        for (Message msg : messageList) {
+            String sender = msg.isSent() ? "我方" : "对方";
+            String time = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(msg.getTimestamp());
+            if (msg.getType() == Message.TYPE_IMAGE) {
+                exportContent.append(time).append(" [").append(sender).append("]: [图片] ").append(msg.getFileName()).append("\n");
+            } else if (msg.getType() == Message.TYPE_FILE) {
+                exportContent.append(time).append(" [").append(sender).append("]: [文件] ").append(msg.getFileName()).append(" (").append(formatFileSize(msg.getFileSize())).append(")\n");
+            } else if (msg.getType() == Message.TYPE_VOICE) {
+                exportContent.append(time).append(" [").append(sender).append("]: [语音] ").append(msg.getVoiceDuration()).append("秒\n");
+            } else {
+                exportContent.append(time).append(" [").append(sender).append("]: ").append(msg.getContent()).append("\n");
+            }
+        }
+
+        // Scoped Storage (API 29+): 使用 SAF (Intent.ACTION_CREATE_DOCUMENT)
+        if (FileHelper.isScopedStorage()) {
+            pendingExportContent = exportContent.toString();
+            pendingExportFileName = exportFileName;
+            Intent intent = FileHelper.createSAFIntent(exportFileName);
+            startActivityForResult(intent, REQUEST_CODE_EXPORT_CHAT);
+            return;
+        }
+
+        // API < 29: 直接写入 Downloads 目录
         try {
-            File exportDir = new File(Environment.getExternalStorageDirectory(), "SoundTransferExports");
-            if (!exportDir.exists() && !exportDir.mkdirs()) { Toast.makeText(getActivity(), "创建导出目录失败", Toast.LENGTH_SHORT).show(); return; }
-            String safeDeviceName = (deviceName != null) ? deviceName.replaceAll("[^a-zA-Z0-9.-]", "_") : "unknown";
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
-            String timestamp = sdf.format(new Date());
-            String filename = "chat_" + safeDeviceName + "_" + timestamp + ".txt";
-            File exportFile = new File(exportDir, filename);
+            File exportDir = FileHelper.getDownloadDir();
+            File exportFile = new File(exportDir, exportFileName);
             // 优化：使用 try-with-resources 确保资源释放
             try (FileOutputStream fos = new FileOutputStream(exportFile);
                  OutputStreamWriter osw = new OutputStreamWriter(fos, "UTF-8")) {
-                osw.write("聊天记录导出 - " + (deviceName != null ? deviceName : "未知设备") + "\n");
-                osw.write("导出时间: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()) + "\n\n");
-                for (Message msg : messageList) {
-                    String sender = msg.isSent() ? "我方" : "对方";
-                    String time = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(msg.getTimestamp());
-                    if (msg.getType() == Message.TYPE_IMAGE) {
-                        osw.write(time + " [" + sender + "]: [图片] " + msg.getFileName() + "\n");
-                    } else if (msg.getType() == Message.TYPE_FILE) {
-                        osw.write(time + " [" + sender + "]: [文件] " + msg.getFileName() + " (" + formatFileSize(msg.getFileSize()) + ")\n");
-                    } else if (msg.getType() == Message.TYPE_VOICE) {
-                        osw.write(time + " [" + sender + "]: [语音] " + msg.getVoiceDuration() + "秒\n");
-                    } else {
-                        osw.write(time + " [" + sender + "]: " + msg.getContent() + "\n");
-                    }
-                }
+                osw.write(exportContent.toString());
             }
             Toast.makeText(getActivity(), "聊天记录已导出到: " + exportFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
         } catch (IOException e) { Log.e(TAG, "导出聊天记录失败", e); Toast.makeText(getActivity(), "导出失败: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }

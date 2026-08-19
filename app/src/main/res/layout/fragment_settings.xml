@@ -115,7 +115,7 @@
                     android:textColor="@color/md3_on_surface"
                     android:textSize="16sp" />
 
-                <android.support.v7.widget.SwitchCompat
+                <androidx.appcompat.widget.SwitchCompat
                     android:id="@+id/switchAutoReconnect"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
@@ -188,7 +188,7 @@
                     android:textColor="@color/md3_on_surface"
                     android:textSize="16sp" />
 
-                <android.support.v7.widget.SwitchCompat
+                <androidx.appcompat.widget.SwitchCompat
                     android:id="@+id/switchCallReminder"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
@@ -216,7 +216,7 @@
                     android:textColor="@color/md3_on_surface"
                     android:textSize="16sp" />
 
-                <android.support.v7.widget.SwitchCompat
+                <androidx.appcompat.widget.SwitchCompat
                     android:id="@+id/switchVibration"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />

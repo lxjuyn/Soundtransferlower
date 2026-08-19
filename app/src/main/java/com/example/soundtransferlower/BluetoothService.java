@@ -185,7 +185,11 @@ public class BluetoothService extends Service {
         if (alarmReceiver != null) {
             unregisterReceiver(alarmReceiver);
         }
-        stopForeground(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE);
+        } else {
+            stopForeground(true);
+        }
     }
 
     // ==================== 通知渠道 ====================
@@ -221,6 +225,19 @@ public class BluetoothService extends Service {
         }
     }
 
+    // ==================== Android 8+ 兼容启动服务 ====================
+    /**
+     * Android 8.0 (API 26) 起后台服务限制：从后台调用 startService 会抛异常。
+     * 此方法统一处理：API 26+ 使用 startForegroundService()，低版本使用 startService()。
+     */
+    private void compatStartForegroundService(Context ctx, Intent intent) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            ctx.startForegroundService(intent);
+        } else {
+            ctx.startService(intent);
+        }
+    }
+
     // ==================== 保活机制 ====================
     private void initKeepAlive() {
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
@@ -233,7 +250,7 @@ public class BluetoothService extends Service {
             @Override
             public void onReceive(Context context, Intent intent) {
                 Log.d(TAG, "Alarm triggered, restarting service...");
-                startService(new Intent(context, BluetoothService.class));
+                compatStartForegroundService(context, new Intent(context, BluetoothService.class));
                 if (wakeLock != null && !wakeLock.isHeld()) {
                     wakeLock.acquire(10 * 60 * 1000L);
                 }
@@ -248,7 +265,7 @@ public class BluetoothService extends Service {
             public void onReceive(Context context, Intent intent) {
                 if (Intent.ACTION_SCREEN_ON.equals(intent.getAction())) {
                     Log.d(TAG, "Screen on, checking service status...");
-                    startService(new Intent(context, BluetoothService.class));
+                    compatStartForegroundService(context, new Intent(context, BluetoothService.class));
                 }
             }
         };

@@ -1,5 +1,8 @@
 package com.example.soundtransferlower;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -7,6 +10,7 @@ import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 import android.content.Intent;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -67,6 +71,14 @@ public class BluetoothFileTransferService extends Service {
         }
     }
 
+    private static final int NOTIFICATION_ID = 1002;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        createNotificationChannelIfNeeded();
+    }
+
     @Override
     public IBinder onBind(Intent intent) {
         Log.d(TAG, "onBind");
@@ -76,6 +88,13 @@ public class BluetoothFileTransferService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand, intent=" + intent);
+        // 适配 API 34+，前台服务需要指定 foregroundServiceType
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, createForegroundNotification(),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIFICATION_ID, createForegroundNotification());
+        }
         if (intent != null) {
             action = intent.getStringExtra("ACTION");
             deviceAddress = intent.getStringExtra("DEVICE_ADDRESS");
