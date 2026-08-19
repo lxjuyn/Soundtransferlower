@@ -589,8 +589,8 @@ public class ChatWorkFragment extends Fragment implements
 
     private String saveFileToLocal(byte[] data, String fileName) {
         try {
-            File dir = new File(getActivity().getExternalFilesDir(null), "files");
-            if (!dir.exists()) dir.mkdirs();
+            File dir = FileHelper.getFileStorageDir(getActivity());
+            if (dir == null) { Log.e(TAG, "无法获取文件存储目录"); return null; }
             String timeStamp = String.valueOf(System.currentTimeMillis());
             File file = new File(dir, timeStamp + "_" + fileName);
             // 优化：使用 try-with-resources 确保资源释放

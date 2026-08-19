@@ -245,8 +245,54 @@ public class BluetoothFileTransferService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE);
+        } else {
+            stopForeground(true);
+        }
         // 优化：释放线程池资源
         fileTransferExecutor.shutdownNow();
+    }
+
+    // ==================== 通知渠道 ====================
+    private void createNotificationChannelIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) {
+                NotificationChannel channel = nm.getNotificationChannel("file_transfer_channel");
+                if (channel == null) {
+                    channel = new NotificationChannel(
+                            "file_transfer_channel",
+                            "文件传输服务",
+                            NotificationManager.IMPORTANCE_LOW
+                    );
+                    channel.setDescription("文件传输运行通知");
+                    nm.createNotificationChannel(channel);
+                }
+            }
+        }
+    }
+
+    private Notification createForegroundNotification() {
+        Notification notification;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            notification = new Notification.Builder(this, "file_transfer_channel")
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle("文件传输服务")
+                    .setContentText("准备中...")
+                    .setPriority(Notification.PRIORITY_LOW)
+                    .setOngoing(true)
+                    .build();
+        } else {
+            notification = new Notification.Builder(this)
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle("文件传输服务")
+                    .setContentText("准备中...")
+                    .setPriority(Notification.PRIORITY_LOW)
+                    .setOngoing(true)
+                    .build();
+        }
+        return notification;
     }
 
     private void setState(int state) {
