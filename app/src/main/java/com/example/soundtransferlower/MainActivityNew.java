@@ -501,11 +501,11 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             }
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
             String timestamp = sdf.format(new Date());
-            FileOutputStream fos = new FileOutputStream(file, true);
-            OutputStreamWriter osw = new OutputStreamWriter(fos, "UTF-8");
-            osw.write(timestamp + ": " + message + "\n");
-            osw.close();
-            fos.close();
+            // 优化：使用 try-with-resources 确保资源释放
+            try (FileOutputStream fos = new FileOutputStream(file, true);
+                 OutputStreamWriter osw = new OutputStreamWriter(fos, "UTF-8")) {
+                osw.write(timestamp + ": " + message + "\n");
+            }
         } catch (IOException e) {
             Log.e(TAG, "Error saving message to file", e);
         }
