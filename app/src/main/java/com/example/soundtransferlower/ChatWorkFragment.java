@@ -65,6 +65,7 @@ public class ChatWorkFragment extends Fragment implements
     private static final String TAG = "ChatWorkFragment";
     private static final int REQUEST_CODE_PICK_FILE = 1001;
     private static final int REQUEST_STORAGE_PERMISSION = 1002;
+    private static final int REQUEST_CODE_EXPORT_CHAT = 1003;
     private static final String FILE_REQUEST_PREFIX = "FILE_REQUEST:";
     private static final String FILE_ACCEPT = "FILE_ACCEPT";
     private static final String FILE_REJECT = "FILE_REJECT";
@@ -112,6 +113,10 @@ public class ChatWorkFragment extends Fragment implements
     private String pendingTextMessage = null;
     private long lastProgressBytes = 0;
     private long lastProgressTime = 0;
+
+    // Scoped Storage 导出相关
+    private String pendingExportContent = null;
+    private String pendingExportFileName = null;
 
     // ★★★ 语音相关 ★★★
     private VoiceRecorder voiceRecorder;
@@ -521,6 +526,23 @@ public class ChatWorkFragment extends Fragment implements
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        // Scoped Storage 导出聊天记录处理
+        if (requestCode == REQUEST_CODE_EXPORT_CHAT && resultCode == getActivity().RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri != null && pendingExportContent != null) {
+                boolean success = FileHelper.writeContentViaSAF(getActivity(), uri, pendingExportContent);
+                if (success) {
+                    Toast.makeText(getActivity(), "聊天记录已导出", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(getActivity(), "导出失败", Toast.LENGTH_SHORT).show();
+                }
+                pendingExportContent = null;
+                pendingExportFileName = null;
+            }
+            return;
+        }
+
         if (requestCode == REQUEST_CODE_PICK_FILE && resultCode == getActivity().RESULT_OK && data != null) {
             Uri uri = data.getData();
             if (uri != null) {

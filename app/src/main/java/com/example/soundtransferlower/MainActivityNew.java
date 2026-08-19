@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -184,7 +185,12 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         }
 
         Intent serviceIntent = new Intent(this, BluetoothService.class);
-        startService(serviceIntent);
+        // Android 8.0 (API 26) 起后台限制：使用 startForegroundService() 替代 startService()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
+        }
         bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE);
 
         if (isFromNotification) {
