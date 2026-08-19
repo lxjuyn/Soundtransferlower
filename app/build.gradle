@@ -9,8 +9,7 @@ android {
     defaultConfig {
         applicationId 'com.am.papertape'
         minSdk 15
-        //noinspection ExpiredTargetSdkVersion
-        targetSdk 19
+        targetSdk 33
         versionCode 29
         versionName "2.9.3fix"
         vectorDrawables.useSupportLibrary = true

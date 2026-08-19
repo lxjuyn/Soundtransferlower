@@ -566,6 +566,9 @@ public class BluetoothService extends Service {
             try {
                 tmp = bluetoothAdapter.listenUsingRfcommWithServiceRecord(APP_NAME, MY_UUID);
                 Log.d(TAG, "AcceptThread: server socket created");
+            } catch (SecurityException e) {
+                Log.e(TAG, "Bluetooth permission not granted", e);
+                failed = true;
             } catch (IOException e) {
                 Log.e(TAG, "Socket listen() failed", e);
                 failed = true;
@@ -630,6 +633,8 @@ public class BluetoothService extends Service {
             BluetoothSocket tmp = null;
             try {
                 tmp = device.createRfcommSocketToServiceRecord(MY_UUID);
+            } catch (SecurityException e) {
+                Log.e(TAG, "Bluetooth permission not granted", e);
             } catch (IOException e) {
                 Log.e(TAG, "Socket create() failed", e);
             }
@@ -638,7 +643,13 @@ public class BluetoothService extends Service {
 
         public void run() {
             setName("ConnectThread");
-            bluetoothAdapter.cancelDiscovery();
+            try {
+                bluetoothAdapter.cancelDiscovery();
+            } catch (SecurityException e) {
+                Log.e(TAG, "Bluetooth permission not granted for cancelDiscovery", e);
+                connectionFailed();
+                return;
+            }
             try {
                 socket.connect();
             } catch (IOException e) {
