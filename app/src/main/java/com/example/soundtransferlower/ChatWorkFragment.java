@@ -1,5 +1,6 @@
 package com.example.soundtransferlower;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -218,14 +219,34 @@ public class ChatWorkFragment extends Fragment implements
 
         if (fileTransferBound) {
             fileTransferService.unregisterCallback(this);
-            getActivity().unbindService(fileTransferConnection);
+            if (getActivity() != null) {
+                try {
+                    getActivity().unbindService(fileTransferConnection);
+                } catch (Exception e) {
+                    Log.e(TAG, "解绑文件传输服务失败: " + e.getMessage());
+                }
+            }
             fileTransferBound = false;
         }
-        getActivity().stopService(new Intent(getActivity(), BluetoothFileTransferService.class));
+        if (getActivity() != null) {
+            try {
+                getActivity().stopService(new Intent(getActivity(), BluetoothFileTransferService.class));
+            } catch (Exception e) {
+                Log.e(TAG, "停止文件传输服务失败: " + e.getMessage());
+            }
+        }
 
-        if (serviceBound && getActivity() != null) {
-            bluetoothService.unregisterCallback(this);
-            getActivity().unbindService(serviceConnection);
+        if (serviceBound) {
+            if (bluetoothService != null) {
+                bluetoothService.unregisterCallback(this);
+            }
+            if (getActivity() != null) {
+                try {
+                    getActivity().unbindService(serviceConnection);
+                } catch (Exception e) {
+                    Log.e(TAG, "解绑蓝牙服务失败: " + e.getMessage());
+                }
+            }
             serviceBound = false;
         }
     }
@@ -528,7 +549,7 @@ public class ChatWorkFragment extends Fragment implements
         super.onActivityResult(requestCode, resultCode, data);
 
         // Scoped Storage 导出聊天记录处理
-        if (requestCode == REQUEST_CODE_EXPORT_CHAT && resultCode == getActivity().RESULT_OK && data != null) {
+        if (requestCode == REQUEST_CODE_EXPORT_CHAT && resultCode == Activity.RESULT_OK && data != null) {
             Uri uri = data.getData();
             if (uri != null && pendingExportContent != null) {
                 boolean success = FileHelper.writeContentViaSAF(getActivity(), uri, pendingExportContent);
@@ -543,7 +564,7 @@ public class ChatWorkFragment extends Fragment implements
             return;
         }
 
-        if (requestCode == REQUEST_CODE_PICK_FILE && resultCode == getActivity().RESULT_OK && data != null) {
+        if (requestCode == REQUEST_CODE_PICK_FILE && resultCode == Activity.RESULT_OK && data != null) {
             Uri uri = data.getData();
             if (uri != null) {
                 try {

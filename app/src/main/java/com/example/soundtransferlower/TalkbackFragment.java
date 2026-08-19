@@ -176,7 +176,9 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         handler.removeCallbacksAndMessages(null);
         checkPacketHandler.removeCallbacksAndMessages(null);
         try {
-            getActivity().unregisterReceiver(bluetoothReceiver);
+            if (getActivity() != null) {
+                getActivity().unregisterReceiver(bluetoothReceiver);
+            }
         } catch (Exception e) {
             Log.e(TAG, "取消注册广播接收器失败: " + e.getMessage());
         }
@@ -184,7 +186,13 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
             if (bluetoothService != null) {
                 bluetoothService.unregisterCallback(this);
             }
-            getActivity().unbindService(serviceConnection);
+            if (getActivity() != null) {
+                try {
+                    getActivity().unbindService(serviceConnection);
+                } catch (Exception e) {
+                    Log.e(TAG, "解绑服务失败: " + e.getMessage());
+                }
+            }
             serviceBound = false;
         }
     }

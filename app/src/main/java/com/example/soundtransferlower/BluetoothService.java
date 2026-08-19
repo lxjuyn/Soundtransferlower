@@ -922,11 +922,17 @@ public class BluetoothService extends Service {
         StringBuilder chatHistory = new StringBuilder();
         try {
             String filename = "chat_" + deviceAddress.replace(":", "_") + ".txt";
-            File file = new File(getExternalFilesDir(null), filename);
+            java.io.File externalDir = getExternalFilesDir(null);
+            if (externalDir == null) {
+                Log.e(TAG, "外部存储不可用");
+                return chatHistory.toString();
+            }
+            File file = new File(externalDir, filename);
             if (file.exists()) {
                 // 优化：使用 try-with-resources 确保资源释放
-                try (InputStream inputStream = getContentResolver().openInputStream(android.net.Uri.fromFile(file));
-                     BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+                // 注意：直接使用 FileInputStream，避免 ContentResolver + Uri.fromFile 的兼容性问题
+                try (InputStream inputStream = new FileInputStream(file);
+                     BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
                         chatHistory.append(line).append("\n");
