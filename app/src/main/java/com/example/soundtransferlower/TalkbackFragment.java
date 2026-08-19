@@ -121,6 +121,19 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
             bluetoothService.registerCallback(TalkbackFragment.this);
             serviceBound = true;
             bluetoothService.setMode(BluetoothService.MODE_TALKBACK);
+
+            // ★★★ 关键修复：如果已连接，不调用startServer/connectToDevice，避免断开现有连接 ★★★
+            if (bluetoothService.isConnected()) {
+                String addr = bluetoothService.getConnectedDeviceAddress();
+                String name = bluetoothService.getConnectedDeviceName();
+                connectedDeviceAddress = addr;
+                connectedDeviceName = name;
+                isConnectionActive = true;
+                updateConnectionUI(true, name);
+                setState(STATE_IDLE);
+                return;
+            }
+
             if (targetDevice != null) {
                 connectToDevice(targetDevice);
             } else {
@@ -228,6 +241,32 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         receivedPacketCount++;
         checkPacketHandler.removeCallbacks(checkPacketRunnable);
         checkPacketHandler.postDelayed(checkPacketRunnable, 2000);
+    }
+
+    // ==================== 更新连接状态UI ====================
+    private void updateConnectionUI(boolean connected, String name) {
+        if (getActivity() == null || tvStatus == null) return;
+        handler.post(() -> {
+            if (connected) {
+                String displayName = (name != null && !name.isEmpty()) ? name : "未知设备";
+                tvStatus.setText("已连接: " + displayName);
+                isConnectionActive = true;
+                isConnecting = false;
+                btnTalk.setEnabled(true);
+                btnTalk.setBackgroundColor(ContextCompat.getColor(getActivity(), android.R.color.holo_green_light));
+                btnAudioMode.setEnabled(true);
+                btnTalk.setText("按下对讲");
+                btnDisconnect.setEnabled(true);
+            } else {
+                tvStatus.setText("未连接");
+                isConnectionActive = false;
+                isConnecting = false;
+                btnTalk.setEnabled(false);
+                btnTalk.setText("按下对讲");
+                btnTalk.setBackgroundColor(ContextCompat.getColor(getActivity(), android.R.color.darker_gray));
+                btnDisconnect.setEnabled(true);
+            }
+        });
     }
 
     @Override
@@ -777,7 +816,29 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
     public void onResume() {
         super.onResume();
         refreshPairedDevices();
-        startServer();
+
+        // ★★★ 每次可见时查询主Activity的全局连接状态 ★★★
+        if (getActivity() instanceof MainActivityNew) {
+            MainActivityNew main = (MainActivityNew) getActivity();
+            if (main.isBluetoothConnected()) {
+                // 已连接，更新状态，不调用startServer()避免断开连接
+                String name = main.getConnectedDeviceName();
+                String addr = main.getConnectedDeviceAddress();
+                connectedDeviceAddress = addr;
+                connectedDeviceName = name;
+                isConnectionActive = true;
+                isConnecting = false;
+                updateConnectionUI(true, name);
+                setState(STATE_IDLE);
+                handler.post(refreshRunnable);
+                return;
+            }
+        }
+
+        // 未连接时才启动服务器等待连接
+        if (!isConnectionActive && !isConnecting) {
+            startServer();
+        }
         handler.post(refreshRunnable);
     }
 
