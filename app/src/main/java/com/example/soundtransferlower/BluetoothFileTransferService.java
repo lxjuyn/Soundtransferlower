@@ -448,25 +448,26 @@ public class BluetoothFileTransferService extends Service {
                     // 优化：计算CRC32校验码
                     CRC32 crc32 = new CRC32();
                     // 优化：文件传输使用64KB缓冲区
-                    FileInputStream fis = new FileInputStream(file);
-                    byte[] buffer = new byte[65536]; // 64KB
-                    int bytesRead;
-                    long totalSent = 0;
-                    long lastCallbackTime = System.currentTimeMillis();
-                    while ((bytesRead = fis.read(buffer)) != -1) {
-                        outputStream.write(buffer, 0, bytesRead);
-                        crc32.update(buffer, 0, bytesRead);
-                        totalSent += bytesRead;
-                        long now = System.currentTimeMillis();
-                        if (now - lastCallbackTime >= 3000) {
-                            final long transferred = totalSent;
-                            final long total = fileLen;
-                            final int progress = (int)(transferred * 100 / total);
-                            progressHandler.post(() -> notifyProgress(total, transferred, progress));
-                            lastCallbackTime = now;
+                    // 优化：使用 try-with-resources 确保资源释放
+                    try (FileInputStream fis = new FileInputStream(file)) {
+                        byte[] buffer = new byte[65536]; // 64KB
+                        int bytesRead;
+                        long totalSent = 0;
+                        long lastCallbackTime = System.currentTimeMillis();
+                        while ((bytesRead = fis.read(buffer)) != -1) {
+                            outputStream.write(buffer, 0, bytesRead);
+                            crc32.update(buffer, 0, bytesRead);
+                            totalSent += bytesRead;
+                            long now = System.currentTimeMillis();
+                            if (now - lastCallbackTime >= 3000) {
+                                final long transferred = totalSent;
+                                final long total = fileLen;
+                                final int progress = (int)(transferred * 100 / total);
+                                progressHandler.post(() -> notifyProgress(total, transferred, progress));
+                                lastCallbackTime = now;
+                            }
                         }
                     }
-                    fis.close();
                     // 发送CRC32校验码（4字节）
                     outputStream.write(intToBytes((int) crc32.getValue()));
                     outputStream.flush();
@@ -514,32 +515,33 @@ public class BluetoothFileTransferService extends Service {
                     }
                     // 优化：计算接收数据的CRC32
                     CRC32 crc32 = new CRC32();
-                    FileOutputStream fos = new FileOutputStream(file);
-                    // 优化：文件传输使用64KB缓冲区
-                    byte[] buffer = new byte[65536]; // 64KB
-                    long remaining = fileLen;
-                    long totalReceived = 0;
-                    long lastCallbackTime = System.currentTimeMillis();
-                    while (remaining > 0) {
-                        int toRead = (int) Math.min(buffer.length, remaining);
-                        int bytes = inputStream.read(buffer, 0, toRead);
-                        if (bytes == -1) {
-                            throw new IOException("连接意外断开");
-                        }
-                        fos.write(buffer, 0, bytes);
-                        crc32.update(buffer, 0, bytes);
-                        totalReceived += bytes;
-                        remaining -= bytes;
-                        long now = System.currentTimeMillis();
-                        if (now - lastCallbackTime >= 3000) {
-                            final long transferred = totalReceived;
-                            final long total = fileLen;
-                            final int progress = (int)(transferred * 100 / total);
-                            progressHandler.post(() -> notifyProgress(total, transferred, progress));
-                            lastCallbackTime = now;
+                    // 优化：使用 try-with-resources 确保资源释放
+                    try (FileOutputStream fos = new FileOutputStream(file)) {
+                        // 优化：文件传输使用64KB缓冲区
+                        byte[] buffer = new byte[65536]; // 64KB
+                        long remaining = fileLen;
+                        long totalReceived = 0;
+                        long lastCallbackTime = System.currentTimeMillis();
+                        while (remaining > 0) {
+                            int toRead = (int) Math.min(buffer.length, remaining);
+                            int bytes = inputStream.read(buffer, 0, toRead);
+                            if (bytes == -1) {
+                                throw new IOException("连接意外断开");
+                            }
+                            fos.write(buffer, 0, bytes);
+                            crc32.update(buffer, 0, bytes);
+                            totalReceived += bytes;
+                            remaining -= bytes;
+                            long now = System.currentTimeMillis();
+                            if (now - lastCallbackTime >= 3000) {
+                                final long transferred = totalReceived;
+                                final long total = fileLen;
+                                final int progress = (int)(transferred * 100 / total);
+                                progressHandler.post(() -> notifyProgress(total, transferred, progress));
+                                lastCallbackTime = now;
+                            }
                         }
                     }
-                    fos.close();
                     // 读取并验证CRC32校验码
                     byte[] crcBytes = new byte[4];
                     readFully(crcBytes);
