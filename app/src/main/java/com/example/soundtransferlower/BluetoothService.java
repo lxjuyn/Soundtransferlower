@@ -317,25 +317,48 @@ public class BluetoothService extends Service {
 
     // ==================== 前台通知 ====================
     private Notification createForegroundNotification() {
+        // 优化：根据连接状态显示不同通知内容
+        String title = "蓝牙服务运行中";
+        String content;
+        if (state == STATE_CONNECTED) {
+            content = "已连接: " + (connectedDeviceName != null ? connectedDeviceName : "未知设备");
+        } else if (state == STATE_CONNECTING) {
+            content = "正在连接...";
+        } else if (state == STATE_LISTEN) {
+            content = "等待连接...";
+        } else {
+            content = "服务已停止";
+        }
+
         Notification notification;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             notification = new Notification.Builder(this, "bluetooth_service")
                     .setSmallIcon(android.R.drawable.ic_dialog_info)
-                    .setContentTitle("蓝牙服务运行中")
-                    .setContentText("等待连接...")
+                    .setContentTitle(title)
+                    .setContentText(content)
                     .setPriority(Notification.PRIORITY_LOW)
                     .setOngoing(true)
                     .build();
         } else {
             notification = new NotificationCompat.Builder(this)
                     .setSmallIcon(android.R.drawable.ic_dialog_info)
-                    .setContentTitle("蓝牙服务运行中")
-                    .setContentText("等待连接...")
+                    .setContentTitle(title)
+                    .setContentText(content)
                     .setPriority(NotificationCompat.PRIORITY_LOW)
                     .setOngoing(true)
                     .build();
         }
         return notification;
+    }
+
+    // 优化：更新通知内容而不重建整个通知
+    private void updateNotification() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) {
+                nm.notify(NOTIFICATION_ID, createForegroundNotification());
+            }
+        }
     }
 
     // ==================== 召唤通知 ====================
@@ -605,6 +628,8 @@ public class BluetoothService extends Service {
 
     private void setState(int newState) {
         state = newState;
+        // 优化：状态变化时更新通知
+        updateNotification();
     }
 
     private void connectionFailed() {
