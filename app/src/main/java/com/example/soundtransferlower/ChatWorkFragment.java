@@ -397,20 +397,25 @@ public class ChatWorkFragment extends Fragment implements
                 destFile = new File(destDir, name);
                 count++;
             }
-            FileInputStream fis = new FileInputStream(srcFile);
-            FileOutputStream fos = new FileOutputStream(destFile);
-            byte[] buffer = new byte[1024];
-            int length;
-            while ((length = fis.read(buffer)) > 0) fos.write(buffer, 0, length);
-            fos.close(); fis.close();
-            if (message.getType() == Message.TYPE_IMAGE) {
-                MediaScannerConnection.scanFile(getActivity(), new String[]{destFile.getAbsolutePath()}, new String[]{"image/*"}, null);
+            FileInputStream fis = null;
+            FileOutputStream fos = null;
+            try {
+                fis = new FileInputStream(srcFile);
+                fos = new FileOutputStream(destFile);
+                byte[] buffer = new byte[1024];
+                int length;
+                while ((length = fis.read(buffer)) > 0) fos.write(buffer, 0, length);
+                if (message.getType() == Message.TYPE_IMAGE) {
+                    MediaScannerConnection.scanFile(getActivity(), new String[]{destFile.getAbsolutePath()}, new String[]{"image/*"}, null);
+                }
+                Toast.makeText(getActivity(), "已保存到: " + destFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
+            } catch (IOException e) {
+                Log.e(TAG, "保存文件失败", e);
+                Toast.makeText(getActivity(), "保存失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            } finally {
+                try { if (fos != null) fos.close(); } catch (IOException ignored) {}
+                try { if (fis != null) fis.close(); } catch (IOException ignored) {}
             }
-            Toast.makeText(getActivity(), "已保存到: " + destFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
-        } catch (IOException e) {
-            Log.e(TAG, "保存文件失败", e);
-            Toast.makeText(getActivity(), "保存失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-        }
     }
 
     // ==================== 发送文本 ====================
@@ -480,15 +485,17 @@ public class ChatWorkFragment extends Fragment implements
                     // ★★★ 根据大小选择处理方式 ★★★
                     if (fileSize <= MAX_MEMORY_FILE_SIZE) {
                         // 小文件：一次性读入内存（原有方式）
-                        InputStream is = resolver.openInputStream(uri);
-                        byte[] bytes = readBytes(is);
-                        is.close();
-                        localFilePath = saveFileToLocal(bytes, fileName);
+                        // 优化：使用 try-with-resources 确保资源释放
+                        try (InputStream is = resolver.openInputStream(uri)) {
+                            byte[] bytes = readBytes(is);
+                            localFilePath = saveFileToLocal(bytes, fileName);
+                        }
                     } else {
                         // ★★★ 大文件：流式复制，不读入内存 ★★★
-                        InputStream is = resolver.openInputStream(uri);
-                        localFilePath = saveFileToLocalFromStream(is, fileName);
-                        is.close();
+                        // 优化：使用 try-with-resources 确保资源释放
+                        try (InputStream is = resolver.openInputStream(uri)) {
+                            localFilePath = saveFileToLocalFromStream(is, fileName);
+                        }
                     }
 
                     pendingFileName = fileName;
@@ -510,9 +517,10 @@ public class ChatWorkFragment extends Fragment implements
             if (!dir.exists()) dir.mkdirs();
             String timeStamp = String.valueOf(System.currentTimeMillis());
             File file = new File(dir, timeStamp + "_" + fileName);
-            FileOutputStream fos = new FileOutputStream(file);
-            fos.write(data);
-            fos.close();
+            // 优化：使用 try-with-resources 确保资源释放
+            try (FileOutputStream fos = new FileOutputStream(file)) {
+                fos.write(data);
+            }
             return file.getAbsolutePath();
         } catch (IOException e) {
             Log.e(TAG, "保存本地文件失败", e);
@@ -713,11 +721,10 @@ public class ChatWorkFragment extends Fragment implements
             Toast.makeText(getActivity(), "未连接，无法发送语音", Toast.LENGTH_SHORT).show();
             return;
         }
-        try {
+        // 优化：使用 try-with-resources 确保资源释放
+        try (FileInputStream fis = new FileInputStream(voiceFile)) {
             byte[] data = new byte[(int) voiceFile.length()];
-            FileInputStream fis = new FileInputStream(voiceFile);
             fis.read(data);
-            fis.close();
             localFilePath = voiceFile.getAbsolutePath();
             pendingFileName = voiceFile.getName();
             pendingFileSize = data.length;
@@ -752,11 +759,10 @@ public class ChatWorkFragment extends Fragment implements
         }
 
         // 开始新的播放
-        try {
+        // 优化：使用 try-with-resources 确保资源释放
+        try (FileInputStream fis = new FileInputStream(new File(path))) {
             byte[] data = new byte[(int) new File(path).length()];
-            FileInputStream fis = new FileInputStream(new File(path));
             fis.read(data);
-            fis.close();
 
             if (voiceRecorder == null) {
                 voiceRecorder = new VoiceRecorder(null);
@@ -1217,23 +1223,24 @@ public class ChatWorkFragment extends Fragment implements
             if (file.exists()) file.delete();
             if (!messageList.isEmpty()) {
                 file.createNewFile();
-                FileOutputStream fos = new FileOutputStream(file, true);
-                OutputStreamWriter osw = new OutputStreamWriter(fos, "UTF-8");
-                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-                for (Message msg : messageList) {
-                    String sender = msg.isSent() ? "我" : "对方";
-                    String timestamp = sdf.format(msg.getTimestamp());
-                    if (msg.getType() == Message.TYPE_IMAGE) {
-                        osw.write(timestamp + ": " + sender + ": " + IMAGE_MARKER + msg.getFilePath() + "\n");
-                    } else if (msg.getType() == Message.TYPE_FILE) {
-                        osw.write(timestamp + ": " + sender + ": " + FILE_MARKER + msg.getFilePath() + "|" + msg.getFileName() + "|" + msg.getFileSize() + "\n");
-                    } else if (msg.getType() == Message.TYPE_VOICE) {
-                        osw.write(timestamp + ": " + sender + ": " + VOICE_MARKER + msg.getFilePath() + "|" + msg.getVoiceDuration() + "\n");
-                    } else {
-                        osw.write(timestamp + ": " + sender + ": " + msg.getContent() + "\n");
+                // 优化：使用 try-with-resources 确保资源释放
+                try (FileOutputStream fos = new FileOutputStream(file, true);
+                     OutputStreamWriter osw = new OutputStreamWriter(fos, "UTF-8")) {
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                    for (Message msg : messageList) {
+                        String sender = msg.isSent() ? "我" : "对方";
+                        String timestamp = sdf.format(msg.getTimestamp());
+                        if (msg.getType() == Message.TYPE_IMAGE) {
+                            osw.write(timestamp + ": " + sender + ": " + IMAGE_MARKER + msg.getFilePath() + "\n");
+                        } else if (msg.getType() == Message.TYPE_FILE) {
+                            osw.write(timestamp + ": " + sender + ": " + FILE_MARKER + msg.getFilePath() + "|" + msg.getFileName() + "|" + msg.getFileSize() + "\n");
+                        } else if (msg.getType() == Message.TYPE_VOICE) {
+                            osw.write(timestamp + ": " + sender + ": " + VOICE_MARKER + msg.getFilePath() + "|" + msg.getVoiceDuration() + "\n");
+                        } else {
+                            osw.write(timestamp + ": " + sender + ": " + msg.getContent() + "\n");
+                        }
                     }
                 }
-                osw.close(); fos.close();
             }
         } catch (IOException e) { Log.e(TAG, "更新聊天记录文件失败", e); }
     }
@@ -1339,24 +1346,25 @@ public class ChatWorkFragment extends Fragment implements
             String timestamp = sdf.format(new Date());
             String filename = "chat_" + safeDeviceName + "_" + timestamp + ".txt";
             File exportFile = new File(exportDir, filename);
-            FileOutputStream fos = new FileOutputStream(exportFile);
-            OutputStreamWriter osw = new OutputStreamWriter(fos, "UTF-8");
-            osw.write("聊天记录导出 - " + (deviceName != null ? deviceName : "未知设备") + "\n");
-            osw.write("导出时间: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()) + "\n\n");
-            for (Message msg : messageList) {
-                String sender = msg.isSent() ? "我方" : "对方";
-                String time = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(msg.getTimestamp());
-                if (msg.getType() == Message.TYPE_IMAGE) {
-                    osw.write(time + " [" + sender + "]: [图片] " + msg.getFileName() + "\n");
-                } else if (msg.getType() == Message.TYPE_FILE) {
-                    osw.write(time + " [" + sender + "]: [文件] " + msg.getFileName() + " (" + formatFileSize(msg.getFileSize()) + ")\n");
-                } else if (msg.getType() == Message.TYPE_VOICE) {
-                    osw.write(time + " [" + sender + "]: [语音] " + msg.getVoiceDuration() + "秒\n");
-                } else {
-                    osw.write(time + " [" + sender + "]: " + msg.getContent() + "\n");
+            // 优化：使用 try-with-resources 确保资源释放
+            try (FileOutputStream fos = new FileOutputStream(exportFile);
+                 OutputStreamWriter osw = new OutputStreamWriter(fos, "UTF-8")) {
+                osw.write("聊天记录导出 - " + (deviceName != null ? deviceName : "未知设备") + "\n");
+                osw.write("导出时间: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()) + "\n\n");
+                for (Message msg : messageList) {
+                    String sender = msg.isSent() ? "我方" : "对方";
+                    String time = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(msg.getTimestamp());
+                    if (msg.getType() == Message.TYPE_IMAGE) {
+                        osw.write(time + " [" + sender + "]: [图片] " + msg.getFileName() + "\n");
+                    } else if (msg.getType() == Message.TYPE_FILE) {
+                        osw.write(time + " [" + sender + "]: [文件] " + msg.getFileName() + " (" + formatFileSize(msg.getFileSize()) + ")\n");
+                    } else if (msg.getType() == Message.TYPE_VOICE) {
+                        osw.write(time + " [" + sender + "]: [语音] " + msg.getVoiceDuration() + "秒\n");
+                    } else {
+                        osw.write(time + " [" + sender + "]: " + msg.getContent() + "\n");
+                    }
                 }
             }
-            osw.close(); fos.close();
             Toast.makeText(getActivity(), "聊天记录已导出到: " + exportFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
         } catch (IOException e) { Log.e(TAG, "导出聊天记录失败", e); Toast.makeText(getActivity(), "导出失败: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }
     }
@@ -1397,18 +1405,19 @@ public class ChatWorkFragment extends Fragment implements
         return size;
     }
     private String saveFileToLocalFromStream(InputStream inputStream, String fileName) {
-        try {
+        // 优化：使用 try-with-resources 确保资源释放
+        try (InputStream is = inputStream) {
             File dir = new File(getActivity().getExternalFilesDir(null), "files");
             if (!dir.exists()) dir.mkdirs();
             String timeStamp = String.valueOf(System.currentTimeMillis());
             File file = new File(dir, timeStamp + "_" + fileName);
-            FileOutputStream fos = new FileOutputStream(file);
-            byte[] buffer = new byte[8192]; // 8KB 缓冲区
-            int len;
-            while ((len = inputStream.read(buffer)) != -1) {
-                fos.write(buffer, 0, len);
+            try (FileOutputStream fos = new FileOutputStream(file)) {
+                byte[] buffer = new byte[8192]; // 8KB 缓冲区
+                int len;
+                while ((len = is.read(buffer)) != -1) {
+                    fos.write(buffer, 0, len);
+                }
             }
-            fos.close();
             return file.getAbsolutePath();
         } catch (IOException e) {
             Log.e(TAG, "保存本地文件失败（流式）", e);

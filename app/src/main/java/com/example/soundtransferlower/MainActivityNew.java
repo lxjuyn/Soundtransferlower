@@ -457,7 +457,9 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         safeUnregisterReceiver();
 
         handler.removeCallbacksAndMessages(null);
-        callTimerHandler.removeCallbacks(callTimerRunnable);
+        if (callTimerRunnable != null) {
+            callTimerHandler.removeCallbacks(callTimerRunnable);
+        }
         if (deviceSelectionDialog != null && deviceSelectionDialog.isShowing()) {
             deviceSelectionDialog.dismiss();
         }
