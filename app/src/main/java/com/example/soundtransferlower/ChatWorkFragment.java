@@ -416,6 +416,10 @@ public class ChatWorkFragment extends Fragment implements
                 try { if (fos != null) fos.close(); } catch (IOException ignored) {}
                 try { if (fis != null) fis.close(); } catch (IOException ignored) {}
             }
+        } catch (Exception e) {
+            Log.e(TAG, "保存文件异常", e);
+            Toast.makeText(getActivity(), "保存失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
     }
 
     // ==================== 发送文本 ====================
