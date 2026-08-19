@@ -44,8 +44,8 @@ public class AudioRecorderPlayer {
     private OpusEncoder opusEncoder;
     private OpusDecoder opusDecoder;
 
-    // 播放队列（容量 10 帧，约 400ms 缓冲）
-    private final BlockingQueue<byte[]> pcmQueue = new LinkedBlockingQueue<>(10);
+    // 播放队列（容量 15 帧，约 300ms 缓冲 @ 16kHz）
+    private final BlockingQueue<byte[]> pcmQueue = new LinkedBlockingQueue<>(15);
     private volatile boolean playThreadRunning = false;
     private Thread playThread;
 
@@ -116,15 +116,28 @@ public class AudioRecorderPlayer {
         playThreadRunning = true;
         playThread = new Thread(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO);
+            int consecutiveErrors = 0;
             while (playThreadRunning) {
                 try {
                     byte[] pcmData = pcmQueue.take(); // 阻塞取数据
                     writePcmToAudioTrack(pcmData);
+                    consecutiveErrors = 0; // 成功则重置错误计数
                 } catch (InterruptedException e) {
                     // 线程被中断，退出循环
                     break;
                 } catch (Exception e) {
                     Log.e(TAG, "播放线程异常: " + e.getMessage());
+                    consecutiveErrors++;
+                    // 优化：连续错误时添加短暂延迟，避免CPU空转
+                    if (consecutiveErrors >= 5) {
+                        Log.w(TAG, "连续播放错误 " + consecutiveErrors + " 次，暂停500ms");
+                        try {
+                            Thread.sleep(500);
+                        } catch (InterruptedException ie) {
+                            break;
+                        }
+                        consecutiveErrors = 0;
+                    }
                 }
             }
             Log.d(TAG, "播放线程退出");
@@ -139,9 +152,14 @@ public class AudioRecorderPlayer {
         }
         // 确保 AudioTrack 处于播放状态
         if (audioTrack.getPlayState() != AudioTrack.PLAYSTATE_PLAYING) {
-            audioTrack.play();
-            isPlaying = true;
-            Log.d(TAG, "音频播放已启动");
+            try {
+                audioTrack.play();
+                isPlaying = true;
+                Log.d(TAG, "音频播放已启动");
+            } catch (IllegalStateException e) {
+                Log.e(TAG, "启动播放失败: " + e.getMessage());
+                return;
+            }
         }
 
         // 直接写入整帧（640 字节很小，不会阻塞太久）
