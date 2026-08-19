@@ -81,11 +81,12 @@ public final class MessageProtocol {
     public static boolean isControlMessage(String message) {
         if (message == null) return false;
         String trimmed = message.trim();
+        // 优化：使用startsWith链式检查，减少字符串比较次数
         return trimmed.startsWith(FILE_REQUEST_PREFIX) ||
-                trimmed.equals(FILE_ACCEPT) ||
-                trimmed.equals(FILE_REJECT) ||
                 trimmed.startsWith(CALL_PREFIX) ||
                 trimmed.startsWith(CALL_REQUEST) ||
+                trimmed.equals(FILE_ACCEPT) ||
+                trimmed.equals(FILE_REJECT) ||
                 trimmed.equals(CALL_ACCEPT) ||
                 trimmed.equals(CALL_REJECT) ||
                 trimmed.equals(CALL_HANGUP);
@@ -111,5 +112,88 @@ public final class MessageProtocol {
                 ((bytes[1] & 0xFF) << 16) |
                 ((bytes[2] & 0xFF) << 8) |
                 (bytes[3] & 0xFF);
+    }
+
+    /**
+     * 优化：批量编码多个文本消息，减少协议开销
+     * 格式: [消息数量(1字节)] [消息1长度(4字节)][消息1] [消息2长度(4字节)][消息2] ...
+     */
+    public static byte[] encodeBatchText(String[] messages) {
+        if (messages == null || messages.length == 0) {
+            return new byte[0];
+        }
+
+        // 计算总大小
+        int totalSize = 1; // 1字节消息数量
+        byte[][] encodedMessages = new byte[messages.length][];
+        for (int i = 0; i < messages.length; i++) {
+            encodedMessages[i] = encodeText(messages[i]);
+            totalSize += encodedMessages[i].length;
+        }
+
+        byte[] result = new byte[totalSize];
+        int offset = 0;
+        result[offset++] = (byte) messages.length; // 消息数量
+
+        for (byte[] encoded : encodedMessages) {
+            System.arraycopy(encoded, 0, result, offset, encoded.length);
+            offset += encoded.length;
+        }
+
+        return result;
+    }
+
+    /**
+     * 优化：解码批量消息
+     */
+    public static String[] decodeBatchText(byte[] data) {
+        if (data == null || data.length < 1) {
+            return new String[0];
+        }
+
+        int messageCount = data[0] & 0xFF;
+        String[] messages = new String[messageCount];
+        int offset = 1;
+
+        for (int i = 0; i < messageCount; i++) {
+            if (offset + 4 > data.length) {
+                Log.e(TAG, "批量消息数据不足，期望4字节长度，剩余: " + (data.length - offset));
+                break;
+            }
+
+            int msgLength = bytesToInt(new byte[]{data[offset], data[offset + 1], data[offset + 2], data[offset + 3]});
+            offset += 4;
+
+            if (offset + msgLength > data.length) {
+                Log.e(TAG, "批量消息数据不足，期望" + msgLength + "字节，剩余: " + (data.length - offset));
+                break;
+            }
+
+            if (isTextMessage(data, offset, msgLength)) {
+                messages[i] = extractTextContent(data, offset, msgLength);
+            }
+            offset += msgLength;
+        }
+
+        return messages;
+    }
+
+    /**
+     * 优化：带偏移量的文本消息检查
+     */
+    private static boolean isTextMessage(byte[] data, int offset, int length) {
+        if (length < TEXT_PREFIX_BYTES.length) return false;
+        for (int i = 0; i < TEXT_PREFIX_BYTES.length; i++) {
+            if (data[offset + i] != TEXT_PREFIX_BYTES[i]) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 优化：带偏移量的文本内容提取
+     */
+    private static String extractTextContent(byte[] data, int offset, int length) {
+        return new String(data, offset + TEXT_PREFIX_BYTES.length,
+                length - TEXT_PREFIX_BYTES.length, StandardCharsets.UTF_8);
     }
 }
