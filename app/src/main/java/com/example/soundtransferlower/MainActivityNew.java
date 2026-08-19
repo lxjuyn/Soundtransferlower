@@ -131,6 +131,35 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         });
     }
 
+    // ==================== Fragment 查询连接状态的方法 ====================
+    /**
+     * 查询当前蓝牙是否已连接
+     */
+    public boolean isBluetoothConnected() {
+        return currentConnectionState == BluetoothService.STATE_CONNECTED;
+    }
+
+    /**
+     * 获取当前已连接设备的名称
+     */
+    public String getConnectedDeviceName() {
+        return connectedDeviceName;
+    }
+
+    /**
+     * 获取当前已连接设备的地址
+     */
+    public String getConnectedDeviceAddress() {
+        return connectedDeviceAddress;
+    }
+
+    /**
+     * 获取当前连接状态
+     */
+    public int getCurrentConnectionState() {
+        return currentConnectionState;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
@@ -571,6 +600,15 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             currentConnectionState = state;
             if (deviceName != null && !deviceName.isEmpty()) {
                 connectedDeviceName = deviceName;
+            }
+            // ★★★ 连接成功时同步更新设备地址 ★★★
+            if (state == BluetoothService.STATE_CONNECTED && bluetoothService != null) {
+                String addr = bluetoothService.getConnectedDeviceAddress();
+                if (addr != null) {
+                    connectedDeviceAddress = addr;
+                }
+            } else if (state == BluetoothService.STATE_NONE || state == BluetoothService.STATE_LISTEN) {
+                connectedDeviceAddress = "";
             }
             updateStatusDisplay();
 
