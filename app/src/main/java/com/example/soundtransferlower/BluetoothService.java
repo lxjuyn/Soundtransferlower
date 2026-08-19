@@ -146,14 +146,16 @@ public class BluetoothService extends Service {
         super.onCreate();
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         state = STATE_NONE;
-        createNotificationChannelIfNeeded(); // 统一创建通知渠道
-        initKeepAlive();
+        createNotificationChannelIfNeeded(); // 必须在 startForeground 之前创建渠道
+        // ★★★ 关键修复：立即 startForeground，必须在 initKeepAlive() 之前
+        // Android 12+ (targetSdk 34) 要求 startForegroundService() 后 5 秒内调用 startForeground()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, createForegroundNotification(),
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
         } else {
             startForeground(NOTIFICATION_ID, createForegroundNotification());
         }
+        initKeepAlive(); // startForeground 之后再初始化保活机制
         registerScreenReceiver();
         startHeartbeat();
         // 启动健康检查
