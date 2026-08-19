@@ -138,11 +138,25 @@ public class BluetoothFileTransferService extends Service {
     }
 
     private void notifyProgress(long total, long transferred, int progress) {
+        // 优化：避免重复通知相同进度
         mainHandler.post(() -> {
             for (FileTransferCallback cb : callbacks) {
                 cb.onProgressUpdate(total, transferred, progress);
             }
         });
+    }
+
+    // 优化：进度限流，防止过于频繁的UI更新
+    private long lastProgressNotifyTime = 0;
+    private static final long MIN_PROGRESS_NOTIFY_INTERVAL_MS = 1000; // 最小1秒间隔
+
+    private void throttledNotifyProgress(long total, long transferred) {
+        long now = System.currentTimeMillis();
+        if (now - lastProgressNotifyTime >= MIN_PROGRESS_NOTIFY_INTERVAL_MS) {
+            int progress = (int) (transferred * 100 / total);
+            notifyProgress(total, transferred, progress);
+            lastProgressNotifyTime = now;
+        }
     }
 
     private synchronized void startTransfer() {
@@ -518,19 +532,12 @@ public class BluetoothFileTransferService extends Service {
                         byte[] buffer = new byte[131072]; // 128KB
                         int bytesRead;
                         long totalSent = 0;
-                        long lastCallbackTime = System.currentTimeMillis();
                         while ((bytesRead = fis.read(buffer)) != -1) {
                             outputStream.write(buffer, 0, bytesRead);
                             crc32.update(buffer, 0, bytesRead);
                             totalSent += bytesRead;
-                            long now = System.currentTimeMillis();
-                            if (now - lastCallbackTime >= 3000) {
-                                final long transferred = totalSent;
-                                final long total = fileLen;
-                                final int progress = (int)(transferred * 100 / total);
-                                progressHandler.post(() -> notifyProgress(total, transferred, progress));
-                                lastCallbackTime = now;
-                            }
+                            // 优化：使用限流的进度通知
+                            throttledNotifyProgress(fileLen, totalSent);
                         }
                     }
                     // 发送CRC32校验码（4字节）
@@ -586,7 +593,6 @@ public class BluetoothFileTransferService extends Service {
                         byte[] buffer = new byte[131072]; // 128KB
                         long remaining = fileLen;
                         long totalReceived = 0;
-                        long lastCallbackTime = System.currentTimeMillis();
                         while (remaining > 0) {
                             int toRead = (int) Math.min(buffer.length, remaining);
                             int bytes = inputStream.read(buffer, 0, toRead);
@@ -597,14 +603,8 @@ public class BluetoothFileTransferService extends Service {
                             crc32.update(buffer, 0, bytes);
                             totalReceived += bytes;
                             remaining -= bytes;
-                            long now = System.currentTimeMillis();
-                            if (now - lastCallbackTime >= 3000) {
-                                final long transferred = totalReceived;
-                                final long total = fileLen;
-                                final int progress = (int)(transferred * 100 / total);
-                                progressHandler.post(() -> notifyProgress(total, transferred, progress));
-                                lastCallbackTime = now;
-                            }
+                            // 优化：使用限流的进度通知
+                            throttledNotifyProgress(fileLen, totalReceived);
                         }
                     }
                     // 读取并验证CRC32校验码
