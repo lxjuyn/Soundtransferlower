@@ -499,6 +499,10 @@ public class BluetoothService extends Service {
         return state;
     }
 
+    public boolean isConnected() {
+        return connectedThread != null && state == STATE_CONNECTED;
+    }
+
     // ==================== 内部通知方法 ====================
     private void notifyMessageReceived(String message, String deviceAddress) {
         new Handler(Looper.getMainLooper()).post(() -> {
