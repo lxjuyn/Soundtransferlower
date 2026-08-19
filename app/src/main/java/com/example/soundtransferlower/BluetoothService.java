@@ -125,7 +125,19 @@ public class BluetoothService extends Service {
                 Log.w(TAG, "健康检查：服务未监听，重新启动");
                 start();
             }
-            healthCheckHandler.postDelayed(this, 30000); // 每30秒检查一次
+            // 优化：根据连接状态调整检查间隔
+            long nextCheckInterval;
+            if (state == STATE_CONNECTED) {
+                // 已连接时降低检查频率，节省电量
+                nextCheckInterval = 60000; // 60秒
+            } else if (state == STATE_CONNECTING) {
+                // 连接中时保持正常频率
+                nextCheckInterval = 30000; // 30秒
+            } else {
+                // 监听状态时增加检查频率，确保及时发现连接
+                nextCheckInterval = 15000; // 15秒
+            }
+            healthCheckHandler.postDelayed(this, nextCheckInterval);
         }
     };
 
@@ -260,8 +272,8 @@ public class BluetoothService extends Service {
     private void initKeepAlive() {
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BluetoothService:KeepAlive");
-        // 优化：使用 try/finally 确保 WakeLock 释放
-        wakeLock.acquire(10 * 60 * 1000L);
+        // 优化：使用5分钟超时而不是10分钟，更频繁检查以节省电量
+        wakeLock.acquire(5 * 60 * 1000L);
 
         alarmManagerHelper = new AlarmManagerHelper(this, HEARTBEAT_INTERVAL);
         alarmReceiver = new BroadcastReceiver() {
@@ -273,8 +285,9 @@ public class BluetoothService extends Service {
                 if (alarmManagerHelper != null) {
                     alarmManagerHelper.startAlarm();
                 }
-                if (wakeLock != null && !wakeLock.isHeld()) {
-                    wakeLock.acquire(10 * 60 * 1000L);
+                // 优化：仅在连接状态下获取WakeLock，减少电量消耗
+                if (state == STATE_CONNECTED && wakeLock != null && !wakeLock.isHeld()) {
+                    wakeLock.acquire(5 * 60 * 1000L);
                 }
             }
         };
