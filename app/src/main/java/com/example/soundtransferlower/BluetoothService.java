@@ -299,7 +299,7 @@ public class BluetoothService extends Service {
         intent.putExtra("IS_CALL", true);
 
         PendingIntent pendingIntent = PendingIntent.getActivity(
-                this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+                this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         Notification notification;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
