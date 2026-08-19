@@ -8,9 +8,16 @@ import android.os.Build;
 import android.os.SystemClock;
 import android.util.Log;
 
+import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.PeriodicWorkRequest;
+import androidx.work.WorkManager;
+
+import java.util.concurrent.TimeUnit;
+
 public class AlarmManagerHelper {
     private static final String TAG = "AlarmManagerHelper";
     public static final String ACTION_RESTART_SERVICE = "com.example.soundtransferlower.RESTART_SERVICE";
+    private static final String WORK_TAG = "bluetooth_service_keepalive";
 
     private Context context;
     private AlarmManager alarmManager;
@@ -58,12 +65,48 @@ public class AlarmManagerHelper {
                 Log.d(TAG, "Alarm set (repeating, legacy), interval=" + interval);
             }
         }
+
+        // ★★★ 备用方案：WorkManager 周期性保活
+        // 即使闹钟失败，WorkManager 也能定期检查并重启服务
+        scheduleWorkManagerBackup();
     }
 
     public void cancelAlarm() {
         if (alarmManager != null) {
             alarmManager.cancel(pendingIntent);
             Log.d(TAG, "Alarm cancelled");
+        }
+        cancelWorkManagerBackup();
+    }
+
+    /**
+     * 调度 WorkManager 备用保活任务。
+     * 使用 ExistingPeriodicWorkPolicy.KEEP 避免重复调度。
+     * 周期为 30 分钟，与闹钟间隔一致。
+     */
+    private void scheduleWorkManagerBackup() {
+        try {
+            PeriodicWorkRequest workRequest = new PeriodicWorkRequest.Builder(
+                    ServiceRestartWorker.class,
+                    30, TimeUnit.MINUTES)
+                    .addTag(WORK_TAG)
+                    .build();
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                    WORK_TAG,
+                    ExistingPeriodicWorkPolicy.KEEP,
+                    workRequest);
+            Log.d(TAG, "WorkManager backup scheduled (30 min interval)");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to schedule WorkManager backup", e);
+        }
+    }
+
+    private void cancelWorkManagerBackup() {
+        try {
+            WorkManager.getInstance(context).cancelUniqueWork(WORK_TAG);
+            Log.d(TAG, "WorkManager backup cancelled");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to cancel WorkManager backup", e);
         }
     }
 }
