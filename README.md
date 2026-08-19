@@ -26,6 +26,12 @@
 
 **纸条（Soundtransferlower）** 是一款基于**经典蓝牙 RFCOMM（SPP 串口协议）**的安卓点对点通信应用。两台安装本应用的手机配对后，**无需联网**即可实现多种通信功能。
 
+### 二次开发说明
+
+本项目基于秋元的[纸条](https://gitee.com/yonstus/Soundtransferlower)项目进行二次开发，感谢原作者的开源贡献。
+
+This project is a fork/secondary development based on [Soundtransferlower](https://gitee.com/yonstus/Soundtransferlower) by 秋元 (yonstus). Credits to the original author for open-sourcing this project.
+
 本项目由**秋元**开发并维护，源码托管于 Gitee：
 
 > 🔗 [https://gitee.com/yonstus/Soundtransferlower](https://gitee.com/yonstus/Soundtransferlower)
@@ -194,6 +200,12 @@ limitations under the License.
 ## 📖 About
 
 **Soundtransferlower** (displayed as "纸条" / "Paper Tape") is a peer-to-peer communication app for Android based on **Bluetooth RFCOMM (SPP - Serial Port Profile)**. Once two phones with this app installed are paired, they can communicate **without any internet connection**.
+
+### Secondary Development Notice
+
+This project is a fork/secondary development based on [Soundtransferlower](https://gitee.com/yonstus/Soundtransferlower) by 秋元 (yonstus). Credits to the original author for open-sourcing this project.
+
+本项目基于秋元的[纸条](https://gitee.com/yonstus/Soundtransferlower)项目进行二次开发，感谢原作者的开源贡献。
 
 Developed and maintained by **秋元 (Qiuyuan)**. Source code is hosted on Gitee:
 

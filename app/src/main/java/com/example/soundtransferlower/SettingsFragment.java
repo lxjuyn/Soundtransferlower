@@ -32,6 +32,7 @@ public class SettingsFragment extends Fragment {
     private TextView tvVersion;
     private TextView tvAuthor;
     private TextView tvOpenSourceUrl;
+    private TextView tvSourceInfo;
     private SwitchCompat switchAutoReconnect;
     private SwitchCompat switchCallReminder;
     private SwitchCompat switchVibration;
@@ -45,6 +46,7 @@ public class SettingsFragment extends Fragment {
         tvVersion = view.findViewById(R.id.tvVersion);
         tvAuthor = view.findViewById(R.id.tvAuthor);
         tvOpenSourceUrl = view.findViewById(R.id.tvOpenSourceUrl);
+        tvSourceInfo = view.findViewById(R.id.tvSourceInfo);
         switchAutoReconnect = view.findViewById(R.id.switchAutoReconnect);
         switchCallReminder = view.findViewById(R.id.switchCallReminder);
         switchVibration = view.findViewById(R.id.switchVibration);
@@ -52,6 +54,7 @@ public class SettingsFragment extends Fragment {
         setupBackButton(view);
         setupDeviceName();
         setupVersionInfo();
+        setupSourceInfo();
         setupSwitches();
 
         return view;
@@ -86,6 +89,11 @@ public class SettingsFragment extends Fragment {
         } catch (PackageManager.NameNotFoundException e) {
             tvVersion.setText("未知版本");
         }
+    }
+
+    private void setupSourceInfo() {
+        String sourceText = "基于秋元的纸条项目二次开发\n原始仓库：gitee.com/yonstus/Soundtransferlower";
+        tvSourceInfo.setText(sourceText);
     }
 
     private void setupSwitches() {

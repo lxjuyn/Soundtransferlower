@@ -11,5 +11,10 @@
 \n1.练手之作，不甚完善，望海涵。可在开源地址https://gitee.com/yonstus/Soundtransferlower联系作者
 \n2.本应用基于java和rfcomm蓝牙开发，最低可以运行在安卓2.1上，target sdk19
 \n3.使用本应用时请遵守有关法律法规，此版本仅供学习参考，下载后请在24小时内删除
+\n
+\n【二次开发来源】
+\n本项目基于秋元的纸条项目进行二次开发。
+\n原始仓库：https://gitee.com/yonstus/Soundtransferlower
+\n感谢原作者的开源贡献。
     </string>
 </resources>
