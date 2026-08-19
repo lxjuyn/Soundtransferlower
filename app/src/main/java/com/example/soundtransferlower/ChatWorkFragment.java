@@ -499,6 +499,11 @@ public class ChatWorkFragment extends Fragment implements
 
     // ==================== 发送文件 ====================
     private void sendFile() {
+        // 确保 Fragment 已附加到 Activity
+        if (!isAdded()) {
+            return;
+        }
+
         if (bluetoothService == null || bluetoothService.getState() != BluetoothService.STATE_CONNECTED) {
             Toast.makeText(getActivity(), "未连接，正在重连...", Toast.LENGTH_LONG).show();
             if (deviceAddress != null && bluetoothService != null) {
@@ -511,15 +516,12 @@ public class ChatWorkFragment extends Fragment implements
             return;
         }
 
-        // 检查存储权限
-        if (!PermissionHelper.hasPermission(getActivity(), android.Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
-            PermissionHelper.requestPermissions(getActivity(),
-                new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                REQUEST_STORAGE_PERMISSION);
-            return;
-        }
+        // 不再需要存储权限检查，因为 ACTION_GET_CONTENT 不需要存储权限
+        // 如果需要兼容 Android 9 及以下，可以保留，但为了简化，我们移除。
+        // 如果后续发现需要权限，可以再添加。
 
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
         startActivityForResult(Intent.createChooser(intent, "选择文件"), REQUEST_CODE_PICK_FILE);
     }
