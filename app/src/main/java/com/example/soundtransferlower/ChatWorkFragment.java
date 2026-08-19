@@ -208,6 +208,34 @@ public class ChatWorkFragment extends Fragment implements
     }
 
     @Override
+    public void onResume() {
+        super.onResume();
+        // ★★★ 每次可见时查询主Activity的全局连接状态 ★★★
+        if (getActivity() instanceof MainActivityNew) {
+            MainActivityNew main = (MainActivityNew) getActivity();
+            if (main.isBluetoothConnected()) {
+                String name = main.getConnectedDeviceName();
+                String addr = main.getConnectedDeviceAddress();
+                // 如果有已连接设备，更新本Fragment的deviceAddress
+                if (addr != null && !addr.isEmpty()) {
+                    deviceAddress = addr;
+                }
+                if (name != null && !name.isEmpty()) {
+                    deviceName = name;
+                }
+                updateConnectionUI(true, deviceName);
+                // 加载聊天历史
+                if (!historyLoaded && serviceBound && deviceAddress != null) {
+                    loadChatHistory();
+                    historyLoaded = true;
+                }
+            } else {
+                updateConnectionUI(false, null);
+            }
+        }
+    }
+
+    @Override
     public void onDestroyView() {
         super.onDestroyView();
         historyLoaded = false;
@@ -1213,6 +1241,20 @@ public class ChatWorkFragment extends Fragment implements
             }
         });
     }
+
+    // ==================== 更新连接状态UI ====================
+    private void updateConnectionUI(boolean connected, String name) {
+        if (getActivity() == null || tvDeviceName == null) return;
+        getActivity().runOnUiThread(() -> {
+            if (connected) {
+                String displayName = (name != null && !name.isEmpty()) ? name : "未知设备";
+                tvDeviceName.setText(displayName + " (已连接)");
+            } else {
+                tvDeviceName.setText("未连接");
+            }
+        });
+    }
+
     @Override
     public void onConnectionStatusChanged(int state, String deviceName) {
         if (getActivity() == null) return;
