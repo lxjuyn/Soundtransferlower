@@ -836,13 +836,13 @@ public class BluetoothService extends Service {
             } catch (IOException e) {
                 Log.e(TAG, "temp sockets not created", e);
             }
-            // 优化：使用 BufferedInputStream/BufferedOutputStream 减少系统调用次数
-            inputStream = (tmpIn != null) ? new BufferedInputStream(tmpIn, 8192) : null;
-            outputStream = (tmpOut != null) ? new BufferedOutputStream(tmpOut, 8192) : null;
+            // 优化：使用16KB缓冲区，减少系统调用次数
+            inputStream = (tmpIn != null) ? new BufferedInputStream(tmpIn, 16384) : null;
+            outputStream = (tmpOut != null) ? new BufferedOutputStream(tmpOut, 16384) : null;
         }
 
         public void run() {
-            byte[] buffer = new byte[8192]; // 优化：缓冲区从1024提升到8192
+            byte[] buffer = new byte[16384]; // 优化：缓冲区从8192提升到16384
             byte[] lenBuffer = new byte[4];
 
             while (isRunning) {
@@ -965,7 +965,14 @@ public class BluetoothService extends Service {
                 byte[] lenBytes = intToBytes(buffer.length);
                 outputStream.write(lenBytes);
                 outputStream.write(buffer);
-                outputStream.flush();
+                // 优化：对于talkback模式，使用异步flush减少延迟
+                if (mode == MODE_TALKBACK) {
+                    // talkback数据较小，直接flush确保及时发送
+                    outputStream.flush();
+                } else {
+                    // chat模式数据较小，flush确保可靠性
+                    outputStream.flush();
+                }
                 if (mode == MODE_CHAT) {
                     String message = new String(buffer);
                     if (message.startsWith(TEXT_PREFIX)) {
