@@ -477,9 +477,9 @@ public class BluetoothFileTransferService extends Service {
             } catch (IOException e) {
                 Log.e(TAG, "streams not created", e);
             }
-            // 优化：使用 BufferedInputStream/BufferedOutputStream 减少系统调用次数
-            inputStream = (tmpIn != null) ? new BufferedInputStream(tmpIn, 8192) : null;
-            outputStream = (tmpOut != null) ? new BufferedOutputStream(tmpOut, 8192) : null;
+            // 优化：使用16KB缓冲区减少系统调用次数
+            inputStream = (tmpIn != null) ? new BufferedInputStream(tmpIn, 16384) : null;
+            outputStream = (tmpOut != null) ? new BufferedOutputStream(tmpOut, 16384) : null;
         }
 
         // 优化：确保读取指定长度的数据（防止粘包/拆包）
@@ -512,10 +512,10 @@ public class BluetoothFileTransferService extends Service {
                     outputStream.write(nameBytes);
                     // 优化：计算CRC32校验码
                     CRC32 crc32 = new CRC32();
-                    // 优化：文件传输使用64KB缓冲区
+                    // 优化：文件传输使用128KB缓冲区，提升吞吐量
                     // 优化：使用 try-with-resources 确保资源释放
                     try (FileInputStream fis = new FileInputStream(file)) {
-                        byte[] buffer = new byte[65536]; // 64KB
+                        byte[] buffer = new byte[131072]; // 128KB
                         int bytesRead;
                         long totalSent = 0;
                         long lastCallbackTime = System.currentTimeMillis();
@@ -582,8 +582,8 @@ public class BluetoothFileTransferService extends Service {
                     CRC32 crc32 = new CRC32();
                     // 优化：使用 try-with-resources 确保资源释放
                     try (FileOutputStream fos = new FileOutputStream(file)) {
-                        // 优化：文件传输使用64KB缓冲区
-                        byte[] buffer = new byte[65536]; // 64KB
+                        // 优化：文件传输使用128KB缓冲区，提升吞吐量
+                        byte[] buffer = new byte[131072]; // 128KB
                         long remaining = fileLen;
                         long totalReceived = 0;
                         long lastCallbackTime = System.currentTimeMillis();

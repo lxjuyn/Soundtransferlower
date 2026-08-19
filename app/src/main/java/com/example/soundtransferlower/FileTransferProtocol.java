@@ -16,8 +16,8 @@ public final class FileTransferProtocol {
     public static final int CRC32_BYTES = 4;
 
     // 传输缓冲区大小
-    public static final int BUFFER_SIZE_SOCKET = 8192;    // socket缓冲区
-    public static final int BUFFER_SIZE_FILE = 65536;      // 文件读写缓冲区(64KB)
+    public static final int BUFFER_SIZE_SOCKET = 16384;    // socket缓冲区 (16KB, 优化: 从8KB提升)
+    public static final int BUFFER_SIZE_FILE = 131072;      // 文件读写缓冲区(128KB, 优化: 从64KB提升)
 
     private FileTransferProtocol() {} // 不可实例化
 
