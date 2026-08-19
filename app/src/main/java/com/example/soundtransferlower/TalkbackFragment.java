@@ -125,11 +125,11 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
             // ★★★ 关键修复：如果已连接，不调用startServer/connectToDevice，避免断开现有连接 ★★★
             if (bluetoothService.isConnected()) {
                 String addr = bluetoothService.getConnectedDeviceAddress();
-                String name = bluetoothService.getConnectedDeviceName();
+                String devName = bluetoothService.getConnectedDeviceName();
                 connectedDeviceAddress = addr;
-                connectedDeviceName = name;
+                connectedDeviceName = devName;
                 isConnectionActive = true;
-                updateConnectionUI(true, name);
+                updateConnectionUI(true, devName);
                 setState(STATE_IDLE);
                 return;
             }
