@@ -11,7 +11,12 @@
         android:layout_height="wrap_content"
         android:text="名称"
         android:layout_marginBottom="16dp"/>
-
+    <Button
+        android:id="@+id/btnSettings"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="设置"
+        android:layout_marginBottom="16dp"/>
     <Button
         android:id="@+id/btnAbout"
         android:layout_width="match_parent"

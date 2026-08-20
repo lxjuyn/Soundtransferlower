@@ -41,7 +41,7 @@ public class BluetoothFinder {
 
     public void startScan() {
         if (isReceiverRegistered) {
-            Log.w(TAG, "扫描已开始，忽略重复调用");
+            LogUtil.w(TAG, "扫描已开始，忽略重复调用");
             return;
         }
         scannedDevices.clear();
@@ -51,9 +51,9 @@ public class BluetoothFinder {
         try {
             context.registerReceiver(scanReceiver, filter);
             isReceiverRegistered = true;
-            Log.d(TAG, "扫描接收器已注册");
+            LogUtil.d(TAG, "扫描接收器已注册");
         } catch (Exception e) {
-            Log.e(TAG, "注册扫描接收器失败: " + e.getMessage());
+            LogUtil.e(TAG, "注册扫描接收器失败: " + e.getMessage());
             return;
         }
 
@@ -64,7 +64,7 @@ public class BluetoothFinder {
 
     public void stopScan() {
         if (!isReceiverRegistered) {
-            Log.d(TAG, "扫描接收器未注册，无需取消");
+            LogUtil.d(TAG, "扫描接收器未注册，无需取消");
             return;
         }
         if (bluetoothAdapter != null && bluetoothAdapter.isDiscovering()) {
@@ -73,9 +73,9 @@ public class BluetoothFinder {
         try {
             context.unregisterReceiver(scanReceiver);
             isReceiverRegistered = false;
-            Log.d(TAG, "扫描接收器已取消注册");
+            LogUtil.d(TAG, "扫描接收器已取消注册");
         } catch (IllegalArgumentException e) {
-            Log.e(TAG, "取消注册扫描接收器失败: " + e.getMessage());
+            LogUtil.e(TAG, "取消注册扫描接收器失败: " + e.getMessage());
         }
     }
 

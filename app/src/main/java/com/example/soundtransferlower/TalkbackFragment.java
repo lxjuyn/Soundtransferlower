@@ -26,7 +26,6 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ListView;
@@ -37,7 +36,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.AudioDataSender, BluetoothService.MessageCallback {
+public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.AudioDataSender, IMessageCallback.MessageCallback {
+
     private static final long TALK_BUTTON_TIMEOUT = 600;
     private boolean isTalkButtonDisabled = false;
     private static final String TAG = "TalkbackFragment";
@@ -55,19 +55,28 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
     private static final int STATE_TALKING = 1;
     private static final int STATE_RECEIVING = 2;
 
+    // ---------- UI ----------
     private TextView tvStatus;
     private ListView deviceList;
     private Button btnRefresh, btnAudioMode, btnTalk, btnDisconnect, btnPair;
-    private Button btnDial; // ★★★ 拨号按钮 ★★★
+    private Button btnDial;
     private DeviceListAdapter deviceAdapter;
     private List<BluetoothDevice> pairedDevices = new ArrayList<>();
 
+    // ---------- 蓝牙 ----------
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothDevice targetDevice;
 
+    // ★★★ 使用接口类型 ★★★
+    private IBluetoothService bluetoothService;
+    private boolean serviceBound = false;
+
+    private String connectedDeviceAddress;
+    private String connectedDeviceName;
+
+    // ---------- 音频 ----------
     private AudioManager audioManager;
     private AudioRecorderPlayer audioRecorderPlayer;
-
     private boolean isRecording = false;
     private boolean isSpeakerMode = false;
     private boolean isConnectionActive = false;
@@ -75,25 +84,14 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
     private boolean isIncomingConnection = false;
     private int currentState = STATE_IDLE;
 
-    private BluetoothService bluetoothService;
-    private boolean serviceBound = false;
-
-    private String connectedDeviceAddress;
-    private String connectedDeviceName;
-
-    private int receivedPacketCount = 0;
-    private Handler checkPacketHandler = new Handler(Looper.getMainLooper());
-    private Runnable checkPacketRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (receivedPacketCount < 3) {
-                // 切换到聊天（不再使用）
-            }
-            receivedPacketCount = 0;
-        }
-    };
-
+    // ---------- Handler ----------
     private Handler handler = new Handler(Looper.getMainLooper());
+    private Handler checkPacketHandler = new Handler(Looper.getMainLooper());
+    private int receivedPacketCount = 0;
+
+    // ★★★ 定义文本前缀字节数组（从接口常量派生）★★★
+    private final byte[] TEXT_PREFIX_BYTES = IBluetoothService.TEXT_PREFIX.getBytes();
+
     private Runnable refreshRunnable = new Runnable() {
         @Override
         public void run() {
@@ -106,20 +104,32 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         @Override
         public void run() {
             if (currentState == STATE_RECEIVING) {
-                Log.d(TAG, "接收超时，恢复空闲状态");
+                LogUtil.d(TAG, "接收超时，恢复空闲状态");
                 setState(STATE_IDLE);
             }
         }
     };
 
+    private Runnable checkPacketRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (receivedPacketCount < 3) {
+                // 可做额外处理，此处忽略
+            }
+            receivedPacketCount = 0;
+        }
+    };
+
+    // ---------- ServiceConnection (获取接口) ----------
     private ServiceConnection serviceConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             BluetoothService.LocalBinder binder = (BluetoothService.LocalBinder) service;
-            bluetoothService = binder.getService();
+            // ★★★ 获取接口实例 ★★★
+            bluetoothService = binder.getInterface();
             bluetoothService.registerCallback(TalkbackFragment.this);
             serviceBound = true;
-            bluetoothService.setMode(BluetoothService.MODE_TALKBACK);
+            bluetoothService.setMode(IBluetoothService.MODE_TALKBACK);
             if (targetDevice != null) {
                 connectToDevice(targetDevice);
             } else {
@@ -133,6 +143,34 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         }
     };
 
+    // ---------- 广播接收器 ----------
+    private final BroadcastReceiver bluetoothReceiver = new BroadcastReceiver() {
+        @SuppressLint("MissingPermission")
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+
+            if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
+                LogUtil.d(TAG, "设备已连接: " + device.getName());
+                handler.post(() -> tvStatus.setText("已连接: " + device.getName()));
+            } else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
+                LogUtil.d(TAG, "设备已断开: " + device.getName());
+                handleConnectionLost();
+            } else if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)) {
+                int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
+                if (state == BluetoothAdapter.STATE_ON) {
+                    refreshPairedDevices();
+                    startServer();
+                } else if (state == BluetoothAdapter.STATE_OFF) {
+                    handler.post(() -> tvStatus.setText("蓝牙已关闭"));
+                }
+            }
+        }
+    };
+
+    // ==================== 生命周期 ====================
+
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.activity_main, container, false);
@@ -145,9 +183,11 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
 
         Intent serviceIntent = new Intent(getActivity(), BluetoothService.class);
         getActivity().bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE);
+
         if (btnDial != null) {
-            btnDial.setVisibility(View.GONE); // ★★★ 隐藏拨号按钮 ★★★
+            btnDial.setVisibility(View.GONE);
         }
+
         handler.postDelayed(() -> {
             isLoading = false;
             setInitialState();
@@ -177,7 +217,7 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         try {
             getActivity().unregisterReceiver(bluetoothReceiver);
         } catch (Exception e) {
-            Log.e(TAG, "取消注册广播接收器失败: " + e.getMessage());
+            LogUtil.e(TAG, "取消注册广播接收器失败: " + e.getMessage());
         }
         if (serviceBound) {
             if (bluetoothService != null) {
@@ -189,130 +229,26 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
     }
 
     @Override
-    public void sendAudioData(byte[] data) {
-        if (serviceBound && bluetoothService != null && isConnectionActive) {
-            bluetoothService.write(data, BluetoothService.MODE_TALKBACK);
-            resetInactivityTimer();
-        }
+    public void onResume() {
+        super.onResume();
+        refreshPairedDevices();
+        startServer();
+        handler.post(refreshRunnable);
     }
 
-    // 对讲模式下收到文本消息（包括文件请求）自动拒绝
     @Override
-    public void onMessageReceived(String message, String deviceAddress) {
-        // 检测是否是文件请求
-        if (message.startsWith("FILE_REQUEST:")) {
-            String rejectMsg = BluetoothService.TEXT_PREFIX + "FILE_REJECT";
-            if (serviceBound && bluetoothService != null) {
-                bluetoothService.write(rejectMsg.getBytes());
-            }
-            handler.post(() -> {
-                Toast.makeText(getActivity(), "当前处于语音模式，无法接收文件，请切换至文本聊天", Toast.LENGTH_LONG).show();
-            });
-            return;
-        }
-
-        // 普通文本消息：仅提示
-        handler.post(() -> {
-            Toast.makeText(getActivity(), "收到文本消息（对讲模式忽略）: " + message, Toast.LENGTH_SHORT).show();
-        });
-
-        receivedPacketCount++;
+    public void onPause() {
+        super.onPause();
+        handler.removeCallbacks(refreshRunnable);
+        handler.removeCallbacks(receiveTimeoutRunnable);
         checkPacketHandler.removeCallbacks(checkPacketRunnable);
-        checkPacketHandler.postDelayed(checkPacketRunnable, 2000);
-    }
-
-    @Override
-    public void onConnectionStatusChanged(int state, String deviceName) {
-        handler.post(() -> {
-            switch (state) {
-                case BluetoothService.STATE_CONNECTED:
-                    tvStatus.setText("已连接: " + deviceName);
-                    isConnectionActive = true;
-                    isConnecting = false;
-                    playConnectionSound();
-                    setState(STATE_IDLE);
-                    startInactivityTimer();
-                    connectedDeviceAddress = bluetoothService.getConnectedDeviceAddress();
-                    connectedDeviceName = deviceName;
-                    btnDisconnect.setEnabled(true);
-                    break;
-                case BluetoothService.STATE_CONNECTING:
-                    tvStatus.setText("连接中...");
-                    isConnecting = true;
-                    btnDisconnect.setEnabled(true);
-                    break;
-                case BluetoothService.STATE_LISTEN:
-                    tvStatus.setText("等待连接...");
-                    isConnectionActive = false;
-                    isConnecting = false;
-                    btnDisconnect.setEnabled(true);
-                    break;
-                case BluetoothService.STATE_NONE:
-                    tvStatus.setText("未连接");
-                    isConnectionActive = false;
-                    isConnecting = false;
-                    btnDisconnect.setEnabled(true);
-                    break;
-            }
-        });
-    }
-
-    @Override
-    public void onTalkbackDataReceived(byte[] data, String deviceAddress) {
-        if (isTextMessage(data)) {
-            String message = new String(data, BluetoothService.TEXT_PREFIX_BYTES.length,
-                    data.length - BluetoothService.TEXT_PREFIX_BYTES.length);
-            onMessageReceived(message, deviceAddress);
-        } else {
-            // ★★★ 增加空指针保护 ★★★
-            if (audioRecorderPlayer == null) {
-                Log.w(TAG, "audioRecorderPlayer 为空，重新初始化");
-                initAudio();
-                if (audioRecorderPlayer == null) return;
-            }
-            audioRecorderPlayer.playAudio(data, data.length);
-            setState(STATE_RECEIVING);
-            resetInactivityTimer();
+        if (isRecording) {
+            stopTalking();
         }
-        receivedPacketCount++;
-        checkPacketHandler.removeCallbacks(checkPacketRunnable);
-        checkPacketHandler.postDelayed(checkPacketRunnable, 2000);
-    }
-    @Override
-    public void onNonTextDataReceived(String deviceAddress) {
-        // 对讲模式不处理
     }
 
-    // ==================== 新增：呼叫回调 ====================
-    @Override
-    public void onCallRequest(String callerName, String deviceAddress) {
-        // 由主Activity处理
-    }
+    // ==================== UI 初始化 ====================
 
-    @Override
-    public void onCallAccepted(String deviceAddress) {
-        // 由主Activity处理
-    }
-
-    @Override
-    public void onCallRejected(String deviceAddress) {
-        // 由主Activity处理
-    }
-
-    @Override
-    public void onCallHungUp(String deviceAddress) {
-        // 由主Activity处理
-    }
-
-    private boolean isTextMessage(byte[] data) {
-        if (data.length < BluetoothService.TEXT_PREFIX_BYTES.length) return false;
-        for (int i = 0; i < BluetoothService.TEXT_PREFIX_BYTES.length; i++) {
-            if (data[i] != BluetoothService.TEXT_PREFIX_BYTES[i]) return false;
-        }
-        return true;
-    }
-
-    // ★★★ 修改 initViews：添加 btnDial ★★★
     private void initViews(View view) {
         tvStatus = view.findViewById(R.id.tvStatus);
         deviceList = view.findViewById(R.id.deviceList);
@@ -321,20 +257,61 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         btnTalk = view.findViewById(R.id.btnTalk);
         btnDisconnect = view.findViewById(R.id.btnDisconnect);
         btnPair = view.findViewById(R.id.btnPair);
-        btnDial = view.findViewById(R.id.btnDial); // ★★★ 查找拨号按钮 ★★★
+        btnDial = view.findViewById(R.id.btnDial);
 
         deviceAdapter = new DeviceListAdapter(getActivity(), R.layout.item_main, pairedDevices);
         deviceList.setAdapter(deviceAdapter);
 
         btnAudioMode.setText("开始外放");
         btnDisconnect.setEnabled(true);
+    }
 
-        // 如果布局中没有 btnDial，动态创建并添加到父布局（可选）
-        if (btnDial == null) {
-            // 如果布局中没有，可以动态创建并添加到某个容器
-            // 这里我们假设布局中已存在
+    private void setupListeners() {
+        deviceList.setOnItemClickListener((parent, view, position, id) -> {
+            targetDevice = pairedDevices.get(position);
+            connectToDevice(targetDevice);
+        });
+
+        btnRefresh.setOnClickListener(v -> refreshPairedDevices());
+
+        btnAudioMode.setOnClickListener(v -> {
+            isSpeakerMode = !isSpeakerMode;
+            setSpeakerMode(isSpeakerMode);
+            btnAudioMode.setText(isSpeakerMode ? "关闭外放" : "开启外放");
+        });
+
+        btnDisconnect.setOnClickListener(v -> disconnect());
+
+        btnPair.setOnClickListener(v -> {
+            Intent intent = new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS);
+            startActivity(intent);
+        });
+
+        btnTalk.setOnClickListener(v -> {
+            if (isTalkButtonDisabled) {
+                Toast.makeText(getActivity(), "请稍后再试", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            disableTalkButtonTemporarily();
+            if (isRecording) {
+                stopTalking();
+            } else {
+                startTalking();
+            }
+        });
+
+        if (btnDial != null) {
+            btnDial.setOnClickListener(v -> {
+                if (getActivity() instanceof MainActivityNew) {
+                    ((MainActivityNew) getActivity()).dialCall();
+                } else {
+                    Toast.makeText(getActivity(), "拨号功能不可用", Toast.LENGTH_SHORT).show();
+                }
+            });
         }
     }
+
+    // ==================== 权限与蓝牙 ====================
 
     private void checkPermissions() {
         String[] permissions = {
@@ -386,60 +363,16 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         setSpeakerMode(false);
     }
 
-    // ★★★ 修改 setupListeners：添加 btnDial 监听 ★★★
-    private void setupListeners() {
-        deviceList.setOnItemClickListener((parent, view, position, id) -> {
-            targetDevice = pairedDevices.get(position);
-            connectToDevice(targetDevice);
-        });
+    // ==================== 设备操作 ====================
 
-        btnRefresh.setOnClickListener(v -> refreshPairedDevices());
-
-        btnAudioMode.setOnClickListener(v -> {
-            isSpeakerMode = !isSpeakerMode;
-            setSpeakerMode(isSpeakerMode);
-            btnAudioMode.setText(isSpeakerMode ? "关闭外放" : "开启外放");
-        });
-
-        btnDisconnect.setOnClickListener(v -> disconnect());
-
-        btnPair.setOnClickListener(v -> {
-            Intent intent = new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS);
-            startActivity(intent);
-        });
-
-        btnTalk.setOnClickListener(v -> {
-            if (isTalkButtonDisabled) {
-                Toast.makeText(getActivity(), "请稍后再试", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            disableTalkButtonTemporarily();
-            if (isRecording) {
-                stopTalking();
-            } else {
-                startTalking();
-            }
-        });
-
-        // ★★★ 拨号按钮监听 ★★★
-        if (btnDial != null) {
-            btnDial.setOnClickListener(v -> {
-                if (getActivity() instanceof MainActivityNew) {
-                    ((MainActivityNew) getActivity()).dialCall();
-                } else {
-                    Toast.makeText(getActivity(), "拨号功能不可用", Toast.LENGTH_SHORT).show();
-                }
-            });
-        }
-    }
-
+    @SuppressLint("MissingPermission")
     private void refreshPairedDevices() {
         if (bluetoothAdapter == null) return;
-        @SuppressLint("MissingPermission") Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
+        Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
         pairedDevices.clear();
         pairedDevices.addAll(devices);
         deviceAdapter.notifyDataSetChanged();
-        Log.d(TAG, "刷新配对设备列表，数量: " + pairedDevices.size());
+        LogUtil.d(TAG, "刷新配对设备列表，数量: " + pairedDevices.size());
     }
 
     private void connectToDevice(BluetoothDevice device) {
@@ -462,30 +395,8 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         }
     }
 
-    private void handleConnectionLost() {
-        Log.d(TAG, "连接丢失");
-        handler.post(() -> {
-            resetConnectionState();
-            tvStatus.setText("连接断开");
-        });
-    }
-
-    private void disableTalkButtonTemporarily() {
-        isTalkButtonDisabled = true;
-        btnTalk.setEnabled(false);
-        btnTalk.setAlpha(0.5f);
-        handler.postDelayed(() -> {
-            isTalkButtonDisabled = false;
-            if (isConnectionActive) {
-                btnTalk.setEnabled(true);
-                btnTalk.setAlpha(1.0f);
-                setState(currentState);
-            }
-        }, TALK_BUTTON_TIMEOUT);
-    }
-
     private void disconnect() {
-        Log.d(TAG, "调用 disconnect() 方法");
+        LogUtil.d(TAG, "调用 disconnect() 方法");
         stopInactivityTimer();
         if (serviceBound && bluetoothService != null) {
             bluetoothService.stop();
@@ -519,60 +430,23 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         checkPacketHandler.removeCallbacks(checkPacketRunnable);
     }
 
-    private void startInactivityTimer() {
-        lastActivityTime = System.currentTimeMillis();
-        handler.postDelayed(inactivityCheckRunnable, 1000);
-        Log.d(TAG, "启动活动检测计时器");
+    private void handleConnectionLost() {
+        LogUtil.d(TAG, "连接丢失");
+        handler.post(() -> {
+            resetConnectionState();
+            tvStatus.setText("连接断开");
+        });
     }
 
-    private void stopInactivityTimer() {
-        handler.removeCallbacks(inactivityCheckRunnable);
-        Log.d(TAG, "停止活动检测计时器");
-    }
-
-    private void resetInactivityTimer() {
-        lastActivityTime = System.currentTimeMillis();
-        Log.d(TAG, "重置活动检测计时器");
-    }
-
-    private void checkInactivity() {
-        if (!isConnectionActive) return;
-        long currentTime = System.currentTimeMillis();
-        long inactiveDuration = currentTime - lastActivityTime;
-        if (inactiveDuration >= INACTIVITY_THRESHOLD_DISCONNECT) {
-            Log.d(TAG, "50秒无活动，断开连接");
-            disconnect();
-            handler.post(() -> Toast.makeText(getActivity(), "50秒无活动，连接已断开", Toast.LENGTH_LONG).show());
-        }
-    }
-
-    private void setSpeakerMode(boolean speaker) {
-        try {
-            if (speaker) {
-                audioManager.setMode(AudioManager.MODE_NORMAL);
-                audioManager.setSpeakerphoneOn(true);
-                int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
-                int targetVolume = (int) (maxVolume * 0.15);
-                audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVolume, 0);
-            } else {
-                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-                audioManager.setSpeakerphoneOn(false);
-                int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
-                audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVolume, 0);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "设置音频模式失败: " + e.getMessage());
-            handler.post(() -> Toast.makeText(getActivity(), "音频模式切换失败", Toast.LENGTH_SHORT).show());
-        }
-    }
+    // ==================== 状态管理 ====================
 
     @SuppressLint("MissingPermission")
     private void setState(int newState) {
         if (currentState != newState) {
             stateChangeCount++;
-            Log.d(TAG, "状态切换计数: " + stateChangeCount);
+            LogUtil.d(TAG, "状态切换计数: " + stateChangeCount);
             if (stateChangeCount >= MAX_STATE_CHANGES) {
-                Log.d(TAG, "达到最大状态切换次数，将断开重连");
+                LogUtil.d(TAG, "达到最大状态切换次数，将断开重连");
                 stateChangeCount = 0;
                 playConnectionSound();
                 if (lastConnectedDevice != null) {
@@ -583,9 +457,16 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         }
         currentState = newState;
         handler.post(() -> {
+            // ★★★ 修复空指针：确保 Activity 存在 ★★★
+            if (getActivity() == null) {
+                LogUtil.w(TAG, "Activity 已销毁，跳过 UI 更新");
+                return;
+            }
+
             switch (newState) {
                 case STATE_IDLE:
-                    tvStatus.setText("已连接: " + (bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : ""));
+                    String addr = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : "";
+                    tvStatus.setText("已连接: " + addr);
                     btnTalk.setEnabled(true);
                     btnTalk.setBackgroundColor(ContextCompat.getColor(getActivity(), android.R.color.holo_green_light));
                     btnAudioMode.setEnabled(true);
@@ -616,9 +497,31 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         });
     }
 
+    // ==================== 音频 ====================
+
+    private void setSpeakerMode(boolean speaker) {
+        try {
+            if (speaker) {
+                audioManager.setMode(AudioManager.MODE_NORMAL);
+                audioManager.setSpeakerphoneOn(true);
+                int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+                int targetVolume = (int) (maxVolume * 0.15);
+                audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVolume, 0);
+            } else {
+                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                audioManager.setSpeakerphoneOn(false);
+                int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+                audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVolume, 0);
+            }
+        } catch (Exception e) {
+            LogUtil.e(TAG, "设置音频模式失败: " + e.getMessage());
+            handler.post(() -> Toast.makeText(getActivity(), "音频模式切换失败", Toast.LENGTH_SHORT).show());
+        }
+    }
+
     private void startTalking() {
         if (!isConnectionActive || isRecording) return;
-        Log.d(TAG, "开始说话");
+        LogUtil.d(TAG, "开始说话");
         setState(STATE_TALKING);
         audioRecorderPlayer.startRecording();
         isRecording = true;
@@ -626,11 +529,70 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
 
     private void stopTalking() {
         if (!isRecording) return;
-        Log.d(TAG, "停止说话");
+        LogUtil.d(TAG, "停止说话");
         audioRecorderPlayer.stopRecording();
         isRecording = false;
         btnTalk.setText("作用中");
         setState(STATE_IDLE);
+    }
+
+    // ==================== 活动检测 ====================
+
+    private void startInactivityTimer() {
+        lastActivityTime = System.currentTimeMillis();
+        handler.postDelayed(inactivityCheckRunnable, 1000);
+        LogUtil.d(TAG, "启动活动检测计时器");
+    }
+
+    private void stopInactivityTimer() {
+        handler.removeCallbacks(inactivityCheckRunnable);
+        LogUtil.d(TAG, "停止活动检测计时器");
+    }
+
+    private void resetInactivityTimer() {
+        lastActivityTime = System.currentTimeMillis();
+        LogUtil.d(TAG, "重置活动检测计时器");
+    }
+
+    private void checkInactivity() {
+        if (!isConnectionActive) return;
+        long currentTime = System.currentTimeMillis();
+        long inactiveDuration = currentTime - lastActivityTime;
+        if (inactiveDuration >= INACTIVITY_THRESHOLD_DISCONNECT) {
+            LogUtil.d(TAG, "50秒无活动，断开连接");
+            disconnect();
+            handler.post(() -> Toast.makeText(getActivity(), "50秒无活动，连接已断开", Toast.LENGTH_LONG).show());
+        }
+    }
+
+    private void disableTalkButtonTemporarily() {
+        isTalkButtonDisabled = true;
+        btnTalk.setEnabled(false);
+        btnTalk.setAlpha(0.5f);
+        handler.postDelayed(() -> {
+            isTalkButtonDisabled = false;
+            if (isConnectionActive) {
+                btnTalk.setEnabled(true);
+                btnTalk.setAlpha(1.0f);
+                setState(currentState);
+            }
+        }, TALK_BUTTON_TIMEOUT);
+    }
+
+    private void playConnectionSound() {
+        try {
+            Vibrator vibrator = (Vibrator) getActivity().getSystemService(Context.VIBRATOR_SERVICE);
+            if (vibrator != null && vibrator.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    VibrationEffect effect = VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE);
+                    vibrator.vibrate(effect);
+                } else {
+                    vibrator.vibrate(500);
+                }
+            }
+        } catch (Exception e) {
+            LogUtil.e(TAG, "振动失败: " + e.getMessage());
+        }
     }
 
     private void setLoadingState() {
@@ -663,67 +625,156 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         });
     }
 
-    private void playConnectionSound() {
-        try {
-            Vibrator vibrator = (Vibrator) getActivity().getSystemService(Context.VIBRATOR_SERVICE);
-            if (vibrator != null && vibrator.hasVibrator()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    VibrationEffect effect = VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE);
-                    vibrator.vibrate(effect);
-                } else {
-                    vibrator.vibrate(500);
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "振动失败: " + e.getMessage());
+    // ==================== AudioDataSender ====================
+
+    @Override
+    public void sendAudioData(byte[] data) {
+        if (serviceBound && bluetoothService != null && isConnectionActive) {
+            // ★★★ 使用接口常量 MODE_TALKBACK ★★★
+            bluetoothService.write(data, IBluetoothService.MODE_TALKBACK);
+            resetInactivityTimer();
         }
     }
 
-    private final BroadcastReceiver bluetoothReceiver = new BroadcastReceiver() {
-        @SuppressLint("MissingPermission")
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-
-            if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
-                Log.d(TAG, "设备已连接: " + device.getName());
-                handler.post(() -> tvStatus.setText("已连接: " + device.getName()));
-            } else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
-                Log.d(TAG, "设备已断开: " + device.getName());
-                handleConnectionLost();
-            } else if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)) {
-                int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
-                if (state == BluetoothAdapter.STATE_ON) {
-                    refreshPairedDevices();
-                    startServer();
-                } else if (state == BluetoothAdapter.STATE_OFF) {
-                    handler.post(() -> tvStatus.setText("蓝牙已关闭"));
-                }
-            }
-        }
-    };
+    // ==================== 蓝牙服务回调 ====================
 
     @Override
-    public void onResume() {
-        super.onResume();
-        refreshPairedDevices();
-        startServer();
-        handler.post(refreshRunnable);
+    public void onMessageReceived(String message, String deviceAddress) {
+        // 文件请求自动拒绝（原逻辑保留）
+        if (message.startsWith(IBluetoothService.FILE_REQUEST_PREFIX)) {
+            String rejectMsg = IBluetoothService.TEXT_PREFIX + IBluetoothService.FILE_REJECT;
+            if (serviceBound && bluetoothService != null) {
+                bluetoothService.write(rejectMsg.getBytes());
+            }
+            handler.post(() -> {
+                Toast.makeText(getActivity(), "当前处于语音模式，无法接收文件，请切换至文本聊天", Toast.LENGTH_LONG).show();
+            });
+            return;
+        }
+
+        // 控制消息（呼叫、召唤）由主Activity处理，这里不切换
+        String trimmed = message.trim();
+        if (trimmed.startsWith(IBluetoothService.CALL_PREFIX) ||
+                trimmed.startsWith(IBluetoothService.CALL_REQUEST) ||
+                trimmed.equals(IBluetoothService.CALL_ACCEPT) ||
+                trimmed.equals(IBluetoothService.CALL_REJECT) ||
+                trimmed.equals(IBluetoothService.CALL_HANGUP)) {
+            return;
+        }
+
+        // ★★★ 修复点：对讲模式下收到普通文本 → 自动切换到聊天模式 ★★★
+        handler.post(() -> {
+            Toast.makeText(getActivity(), "收到文本消息，自动切换到聊天模式", Toast.LENGTH_SHORT).show();
+            if (getActivity() instanceof MainActivityNew) {
+                // 设置模式为 CHAT
+                if (bluetoothService != null) {
+                    bluetoothService.setMode(IBluetoothService.MODE_CHAT);
+                }
+                String address = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : deviceAddress;
+                String name = bluetoothService != null ? bluetoothService.getConnectedDeviceName() : "未知设备";
+                ((MainActivityNew) getActivity()).switchToFragment("ChatWorkFragment", address, name);
+            }
+        });
+
+        // 不再额外Toast，上面已有
+        LogUtil.d(TAG, "收到文本消息（对讲模式）: " + message);
     }
 
     @Override
-    public void onPause() {
-        super.onPause();
-        handler.removeCallbacks(refreshRunnable);
-        handler.removeCallbacks(receiveTimeoutRunnable);
+    public void onConnectionStatusChanged(int state, String deviceName) {
+        handler.post(() -> {
+            switch (state) {
+                case IBluetoothService.STATE_CONNECTED:
+                    tvStatus.setText("已连接: " + deviceName);
+                    isConnectionActive = true;
+                    isConnecting = false;
+                    playConnectionSound();
+                    setState(STATE_IDLE);
+                    startInactivityTimer();
+                    connectedDeviceAddress = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+                    connectedDeviceName = deviceName;
+                    btnDisconnect.setEnabled(true);
+                    break;
+                case IBluetoothService.STATE_CONNECTING:
+                    tvStatus.setText("连接中...");
+                    isConnecting = true;
+                    btnDisconnect.setEnabled(true);
+                    break;
+                case IBluetoothService.STATE_LISTEN:
+                    tvStatus.setText("等待连接...");
+                    isConnectionActive = false;
+                    isConnecting = false;
+                    btnDisconnect.setEnabled(true);
+                    break;
+                case IBluetoothService.STATE_NONE:
+                    tvStatus.setText("未连接");
+                    isConnectionActive = false;
+                    isConnecting = false;
+                    btnDisconnect.setEnabled(true);
+                    break;
+            }
+        });
+    }
+
+    @Override
+    public void onTalkbackDataReceived(byte[] data, String deviceAddress) {
+        if (isTextMessage(data)) {
+            // 提取文本消息并作为普通消息处理
+            String message = new String(data, TEXT_PREFIX_BYTES.length,
+                    data.length - TEXT_PREFIX_BYTES.length);
+            onMessageReceived(message, deviceAddress);
+        } else {
+            if (audioRecorderPlayer == null) {
+                LogUtil.w(TAG, "audioRecorderPlayer 为空，重新初始化");
+                initAudio();
+                if (audioRecorderPlayer == null) return;
+            }
+            audioRecorderPlayer.playAudio(data, data.length);
+            setState(STATE_RECEIVING);
+            resetInactivityTimer();
+        }
+        receivedPacketCount++;
         checkPacketHandler.removeCallbacks(checkPacketRunnable);
-        if (isRecording) {
-            stopTalking();
-        }
+        checkPacketHandler.postDelayed(checkPacketRunnable, 2000);
     }
 
-    // ★★★ 适配器 ★★★
+    @Override
+    public void onNonTextDataReceived(String deviceAddress) {
+        // 对讲模式不处理
+    }
+
+    @Override
+    public void onCallRequest(String callerName, String deviceAddress) {
+        // 由主Activity处理
+    }
+
+    @Override
+    public void onCallAccepted(String deviceAddress) {
+        // 由主Activity处理
+    }
+
+    @Override
+    public void onCallRejected(String deviceAddress) {
+        // 由主Activity处理
+    }
+
+    @Override
+    public void onCallHungUp(String deviceAddress) {
+        // 由主Activity处理
+    }
+
+    // ==================== 工具方法 ====================
+
+    private boolean isTextMessage(byte[] data) {
+        if (data.length < TEXT_PREFIX_BYTES.length) return false;
+        for (int i = 0; i < TEXT_PREFIX_BYTES.length; i++) {
+            if (data[i] != TEXT_PREFIX_BYTES[i]) return false;
+        }
+        return true;
+    }
+
+    // ==================== 内部适配器 ====================
+
     public static class DeviceListAdapter extends ArrayAdapter<BluetoothDevice> {
         private final LayoutInflater inflater;
         private final int resource;

@@ -74,9 +74,9 @@ public class VoiceRecorder {
             encoder.setBitrate(16000);
             encoder.setComplexity(5);
             decoder = new OpusDecoder(SAMPLE_RATE, 1);
-            Log.d(TAG, "Opus 编解码器初始化成功");
+            LogUtil.d(TAG, "Opus 编解码器初始化成功");
         } catch (OpusException e) {
-            Log.e(TAG, "Opus初始化失败", e);
+            LogUtil.e(TAG, "Opus初始化失败", e);
         }
     }
 
@@ -94,17 +94,17 @@ public class VoiceRecorder {
                 AudioTrack.MODE_STREAM
         );
         if (audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
-            Log.e(TAG, "AudioTrack 初始化失败");
+            LogUtil.e(TAG, "AudioTrack 初始化失败");
             audioTrack = null;
         } else {
-            Log.d(TAG, "AudioTrack 初始化成功");
+            LogUtil.d(TAG, "AudioTrack 初始化成功");
         }
     }
 
     // ==================== 录音部分 ====================
     public void startRecording(File file) {
         if (isRecording || encoder == null) {
-            Log.e(TAG, "录音已在进行或编码器未初始化");
+            LogUtil.e(TAG, "录音已在进行或编码器未初始化");
             listener.onRecordError("编码器未就绪");
             return;
         }
@@ -112,7 +112,7 @@ public class VoiceRecorder {
         File parentDir = file.getParentFile();
         if (parentDir != null && !parentDir.exists()) {
             if (!parentDir.mkdirs()) {
-                Log.e(TAG, "无法创建录音目录");
+                LogUtil.e(TAG, "无法创建录音目录");
                 listener.onRecordError("无法创建录音目录");
                 return;
             }
@@ -120,7 +120,7 @@ public class VoiceRecorder {
         try {
             fos = new FileOutputStream(file);
         } catch (IOException e) {
-            Log.e(TAG, "打开文件输出流失败", e);
+            LogUtil.e(TAG, "打开文件输出流失败", e);
             listener.onRecordError("文件创建失败: " + e.getMessage());
             return;
         }
@@ -137,7 +137,7 @@ public class VoiceRecorder {
             handler.post(() -> listener.onRecordStart());
             new Thread(new RecordRunnable()).start();
         } catch (Exception e) {
-            Log.e(TAG, "启动录音失败", e);
+            LogUtil.e(TAG, "启动录音失败", e);
             if (fos != null) {
                 try { fos.close(); } catch (IOException ignored) {}
                 fos = null;
@@ -170,7 +170,7 @@ public class VoiceRecorder {
                 synchronized (VoiceRecorder.this) {
                     localFos = fos;
                     if (localFos == null) {
-                        Log.w(TAG, "fos 为空，等待重新打开...");
+                        LogUtil.w(TAG, "fos 为空，等待重新打开...");
                         try {
                             Thread.sleep(100);
                         } catch (InterruptedException ignored) {}
@@ -179,7 +179,7 @@ public class VoiceRecorder {
                 }
 
                 if (audioRecord == null) {
-                    Log.e(TAG, "AudioRecord 为空，停止录音");
+                    LogUtil.e(TAG, "AudioRecord 为空，停止录音");
                     isRecording = false;
                     handler.post(() -> listener.onRecordError("录音设备异常"));
                     break;
@@ -215,7 +215,7 @@ public class VoiceRecorder {
                             }
                         }
                     } catch (IOException | OpusException e) {
-                        Log.e(TAG, "编码失败", e);
+                        LogUtil.e(TAG, "编码失败", e);
                         isRecording = false;
                         handler.post(() -> listener.onRecordError("编码失败: " + e.getMessage()));
                         break;
@@ -237,7 +237,7 @@ public class VoiceRecorder {
     // ==================== 播放部分（增加控制和回调） ====================
     public void playVoice(byte[] opusData, int length, int durationSeconds, OnPlayListener playListener) {
         if (decoder == null || audioTrack == null) {
-            Log.e(TAG, "解码器或 AudioTrack 未初始化");
+            LogUtil.e(TAG, "解码器或 AudioTrack 未初始化");
             if (playListener != null) playListener.onPlayFinish();
             return;
         }
@@ -261,7 +261,7 @@ public class VoiceRecorder {
                     int frameLen = ((opusData[offset] & 0xFF) << 8) | (opusData[offset + 1] & 0xFF);
                     offset += 2;
                     if (offset + frameLen > length) {
-                        Log.w(TAG, "帧长度超出数据范围");
+                        LogUtil.w(TAG, "帧长度超出数据范围");
                         break;
                     }
                     short[] pcmShorts = new short[FRAME_SAMPLES];
@@ -271,7 +271,7 @@ public class VoiceRecorder {
                             false
                     );
                     if (decodedSamples != FRAME_SAMPLES) {
-                        Log.w(TAG, "解码样本数异常: " + decodedSamples + "，期望: " + FRAME_SAMPLES);
+                        LogUtil.w(TAG, "解码样本数异常: " + decodedSamples + "，期望: " + FRAME_SAMPLES);
                         break;
                     }
                     byte[] pcmBytes = new byte[PCM_BYTES_PER_FRAME];
@@ -285,16 +285,16 @@ public class VoiceRecorder {
                     audioTrack.write(pcmBytes, 0, PCM_BYTES_PER_FRAME);
                     offset += frameLen;
                 }
-                Log.d(TAG, isPlaying ? "播放完成" : "播放被中断");
+                LogUtil.d(TAG, isPlaying ? "播放完成" : "播放被中断");
             } catch (OpusException e) {
-                Log.e(TAG, "播放失败", e);
+                LogUtil.e(TAG, "播放失败", e);
                 handler.post(() -> {
                     if (playListener != null) playListener.onPlayFinish();
                     listener.onRecordError("播放失败: " + e.getMessage());
                 });
                 return;
             } catch (IllegalStateException e) {
-                Log.e(TAG, "播放状态错误", e);
+                LogUtil.e(TAG, "播放状态错误", e);
                 handler.post(() -> {
                     if (playListener != null) playListener.onPlayFinish();
                     listener.onRecordError("播放状态错误: " + e.getMessage());

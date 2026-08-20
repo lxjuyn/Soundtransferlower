@@ -29,14 +29,14 @@ public class AlarmManagerHelper {
             // 使用 ELAPSED_REALTIME_WAKEUP 唤醒设备
             long triggerAt = SystemClock.elapsedRealtime() + interval;
             alarmManager.setRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, interval, pendingIntent);
-            Log.d(TAG, "Alarm set, interval=" + interval);
+            LogUtil.d(TAG, "Alarm set, interval=" + interval);
         }
     }
 
     public void cancelAlarm() {
         if (alarmManager != null) {
             alarmManager.cancel(pendingIntent);
-            Log.d(TAG, "Alarm cancelled");
+            LogUtil.d(TAG, "Alarm cancelled");
         }
     }
 }

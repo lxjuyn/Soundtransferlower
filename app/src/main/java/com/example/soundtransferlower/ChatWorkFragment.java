@@ -42,7 +42,6 @@ import android.widget.PopupWindow;
 import android.widget.TextView;
 import android.widget.Toast;
 
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -58,24 +57,21 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+// ★★★ 导入接口 ★★★
+
+
 public class ChatWorkFragment extends Fragment implements
-        BluetoothService.MessageCallback,
-        BluetoothFileTransferService.FileTransferCallback {
-    private static final long MAX_MEMORY_FILE_SIZE = 50 * 1024 * 1024; // 50MB，超过则流式复制
+        IMessageCallback.MessageCallback,      // 该接口仍定义在 BluetoothService 中，但此处仅依赖接口类型
+        BluetoothFileTransferService.FileTransferCallback {  // 同理
+
+    private static final long MAX_MEMORY_FILE_SIZE = 50 * 1024 * 1024; // 50MB
     private static final String TAG = "ChatWorkFragment";
     private static final int REQUEST_CODE_PICK_FILE = 1001;
-    private static final String FILE_REQUEST_PREFIX = "FILE_REQUEST:";
-    private static final String FILE_ACCEPT = "FILE_ACCEPT";
-    private static final String FILE_REJECT = "FILE_REJECT";
     private static final String IMAGE_MARKER = "[IMAGE]";
     private static final String FILE_MARKER = "[FILE]";
     private static final String VOICE_MARKER = "[VOICE]";
     private static final long MAX_FILE_SIZE = 5000 * 1024 * 1024;
-    private boolean isVoicePlaying = false;
-    private Message currentPlayingVoice = null;
-    private int playingPosition = -1;
-    private Handler voiceBlinkHandler = new Handler();
-    private Runnable voiceBlinkRunnable;
+
     // UI
     private TextView tvDeviceName;
     private RecyclerView recyclerViewMessages;
@@ -84,21 +80,27 @@ public class ChatWorkFragment extends Fragment implements
     private Button btnMore;
     private ImageButton btnVoice;
 
-    // 蓝牙服务
-    private BluetoothService bluetoothService;
+    // ★★★ 改为接口类型 ★★★
+    private IBluetoothService bluetoothService;
+    private IFileTransferService fileTransferService;
     private boolean serviceBound = false;
+    private boolean fileTransferBound = false;
+
     private String deviceAddress;
     private String deviceName;
     private boolean historyLoaded = false;
 
-    // 消息
+    // 消息列表
     private MessageAdapter messageAdapter;
     private List<Message> messageList = new ArrayList<>();
 
-    // 删除
+    // 删除状态
     private boolean deleteConfirmation = false;
     private Handler deleteHandler = new Handler();
-    private Runnable deleteResetRunnable = () -> { deleteConfirmation = false; Toast.makeText(getActivity(), "删除操作已取消", Toast.LENGTH_SHORT).show(); };
+    private Runnable deleteResetRunnable = () -> {
+        deleteConfirmation = false;
+        Toast.makeText(getActivity(), "删除操作已取消", Toast.LENGTH_SHORT).show();
+    };
 
     // 文件发送
     private boolean isFileSender = false;
@@ -112,46 +114,44 @@ public class ChatWorkFragment extends Fragment implements
     private long lastProgressBytes = 0;
     private long lastProgressTime = 0;
 
-    // ★★★ 语音相关 ★★★
+    // 语音
     private VoiceRecorder voiceRecorder;
     private File currentVoiceFile;
     private int currentVoiceDuration = 0;
     private int pendingVoiceDuration = 0;
     private MediaPlayer voicePlayer = null;
+    private boolean isVoicePlaying = false;
+    private Message currentPlayingVoice = null;
+    private int playingPosition = -1;
+    private Handler voiceBlinkHandler = new Handler();
+    private Runnable voiceBlinkRunnable;
 
-    // 文件传输服务
-    private BluetoothFileTransferService fileTransferService;
-    private boolean fileTransferBound = false;
-    private ServiceConnection fileTransferConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            BluetoothFileTransferService.LocalBinder binder = (BluetoothFileTransferService.LocalBinder) service;
-            fileTransferService = binder.getService();
-            fileTransferService.registerCallback(ChatWorkFragment.this);
-            fileTransferBound = true;
-        }
-        @Override
-        public void onServiceDisconnected(ComponentName name) { fileTransferBound = false; }
-    };
-
+    // 非文本数据计数
     private int nonTextDataCount = 0;
     private Handler nonTextHandler = new Handler(Looper.getMainLooper());
     private Runnable resetNonTextDataCount = () -> nonTextDataCount = 0;
     private Set<String> processedMessages = new HashSet<>();
 
+    // ==================== ServiceConnection（改为获取接口） ====================
     private ServiceConnection serviceConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             BluetoothService.LocalBinder binder = (BluetoothService.LocalBinder) service;
-            bluetoothService = binder.getService();
+            bluetoothService = binder.getInterface();
             bluetoothService.registerCallback(ChatWorkFragment.this);
             serviceBound = true;
-            bluetoothService.setMode(BluetoothService.MODE_CHAT);
+            bluetoothService.setMode(IBluetoothService.MODE_CHAT);
+
             if (deviceAddress != null) {
-                String currentAddress = bluetoothService.getConnectedDeviceAddress();
-                if (currentAddress != null && currentAddress.equals(deviceAddress)) {
+                int state = bluetoothService.getState();
+                if (state == IBluetoothService.STATE_CONNECTED) {
+                    // 已连接，直接加载历史
                     loadChatHistory();
+                } else if (state == IBluetoothService.STATE_CONNECTING) {
+                    // 正在连接中，等待回调，不做额外操作
+                    LogUtil.d(TAG, "Already connecting, wait for callback");
                 } else {
+                    // 未连接，发起连接
                     BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
                     if (adapter != null) {
                         BluetoothDevice device = adapter.getRemoteDevice(deviceAddress);
@@ -160,28 +160,50 @@ public class ChatWorkFragment extends Fragment implements
                 }
             }
         }
+
         @Override
-        public void onServiceDisconnected(ComponentName name) { serviceBound = false; }
+        public void onServiceDisconnected(ComponentName name) {
+            serviceBound = false;
+        }
     };
 
+    private ServiceConnection fileTransferConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            BluetoothFileTransferService.LocalBinder binder = (BluetoothFileTransferService.LocalBinder) service;
+            // ★★★ 获取接口实例 ★★★
+            fileTransferService = binder.getInterface();
+            fileTransferService.registerCallback(ChatWorkFragment.this);
+            fileTransferBound = true;
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            fileTransferBound = false;
+        }
+    };
+
+    // ==================== Fragment生命周期 ====================
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.activity_chat, container, false);
         AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
+
         Bundle args = getArguments();
         if (args != null) {
             deviceAddress = args.getString("DEVICE_ADDRESS");
             deviceName = args.getString("DEVICE_NAME");
         }
+
         initUI(view);
+
+        // 绑定蓝牙服务
         Intent serviceIntent = new Intent(getActivity(), BluetoothService.class);
         getActivity().bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE);
 
-        // ★★★ 如果服务已经连接，立即加载历史（增强鲁棒性）★★★
-        // 由于绑定是异步的，这里不能直接使用 bluetoothService，需在 serviceConnection 中处理
-        // 但为了处理从其他界面切回时已连接的情况，我们延迟检查
+        // 延迟加载历史（处理已连接情况）
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (serviceBound && bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
+            if (serviceBound && bluetoothService != null && bluetoothService.getState() == IBluetoothService.STATE_CONNECTED) {
                 String addr = bluetoothService.getConnectedDeviceAddress();
                 if (addr != null && (deviceAddress == null || deviceAddress.equals(addr))) {
                     if (!historyLoaded) {
@@ -190,7 +212,7 @@ public class ChatWorkFragment extends Fragment implements
                     }
                 }
             }
-        }, 300); // 延迟 300ms 等待绑定完成
+        }, 300);
 
         return view;
     }
@@ -204,7 +226,6 @@ public class ChatWorkFragment extends Fragment implements
         nonTextHandler.removeCallbacks(resetNonTextDataCount);
         stopVoicePlayback();
         voiceBlinkHandler.removeCallbacksAndMessages(null);
-        // ★★★ 释放录音机 ★★★
         if (voiceRecorder != null) {
             voiceRecorder.release();
             voiceRecorder = null;
@@ -223,6 +244,8 @@ public class ChatWorkFragment extends Fragment implements
             serviceBound = false;
         }
     }
+
+    // ==================== UI初始化 ====================
     private void initUI(View view) {
         ImageButton btnBack = view.findViewById(R.id.btnBack);
         tvDeviceName = view.findViewById(R.id.tvDeviceName);
@@ -243,7 +266,7 @@ public class ChatWorkFragment extends Fragment implements
         btnSend.setOnClickListener(v -> sendMessage());
         btnMore.setOnClickListener(v -> showMoreOptions());
 
-        // ★★★ 语音按钮 ★★★
+        // 语音按钮长按录音
         btnVoice.setOnTouchListener((v, event) -> {
             switch (event.getAction()) {
                 case MotionEvent.ACTION_DOWN:
@@ -278,8 +301,13 @@ public class ChatWorkFragment extends Fragment implements
         PopupMenu popupMenu = new PopupMenu(getActivity(), getView().findViewById(R.id.btnMenu));
         popupMenu.getMenuInflater().inflate(R.menu.chat_menu, popupMenu.getMenu());
         popupMenu.setOnMenuItemClickListener(item -> {
-            if (item.getItemId() == R.id.menu_delete_chat) { handleDeleteChat(); return true; }
-            else if (item.getItemId() == R.id.menu_export_chat) { exportChatHistory(); return true; }
+            if (item.getItemId() == R.id.menu_delete_chat) {
+                handleDeleteChat();
+                return true;
+            } else if (item.getItemId() == R.id.menu_export_chat) {
+                exportChatHistory();
+                return true;
+            }
             return false;
         });
         popupMenu.show();
@@ -293,9 +321,16 @@ public class ChatWorkFragment extends Fragment implements
             return true;
         });
         popupMenu.setOnMenuItemClickListener(item -> {
-            if (item.getItemId() == R.id.menu_talkback) { startTalkbackActivity(); return true; }
-            else if (item.getItemId() == R.id.menu_send_file) { sendFile(); return true; }
-            else if (item.getItemId() == R.id.menu_call) { sendCall(); return true; }
+            if (item.getItemId() == R.id.menu_talkback) {
+                startTalkbackActivity();
+                return true;
+            } else if (item.getItemId() == R.id.menu_send_file) {
+                sendFile();
+                return true;
+            } else if (item.getItemId() == R.id.menu_call) {
+                sendCall();
+                return true;
+            }
             return false;
         });
         popupMenu.show();
@@ -305,7 +340,7 @@ public class ChatWorkFragment extends Fragment implements
     private void sendCall() {
         if (getActivity() == null) return;
 
-        if (bluetoothService == null || bluetoothService.getState() != BluetoothService.STATE_CONNECTED) {
+        if (bluetoothService == null || bluetoothService.getState() != IBluetoothService.STATE_CONNECTED) {
             Toast.makeText(getActivity(), "未连接，正在重连...", Toast.LENGTH_LONG).show();
             if (deviceAddress != null && bluetoothService != null) {
                 BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
@@ -314,7 +349,7 @@ public class ChatWorkFragment extends Fragment implements
                     bluetoothService.connect(device);
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
                         if (getActivity() == null) return;
-                        if (bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
+                        if (bluetoothService != null && bluetoothService.getState() == IBluetoothService.STATE_CONNECTED) {
                             doSendCall();
                         } else {
                             Toast.makeText(getActivity(), "重连失败，请稍后重试", Toast.LENGTH_LONG).show();
@@ -329,15 +364,15 @@ public class ChatWorkFragment extends Fragment implements
 
     private void doSendCall() {
         if (getActivity() == null) return;
-
-        if (bluetoothService == null || bluetoothService.getState() != BluetoothService.STATE_CONNECTED) {
+        if (bluetoothService == null || bluetoothService.getState() != IBluetoothService.STATE_CONNECTED) {
             Toast.makeText(getActivity(), "未连接，无法召唤", Toast.LENGTH_SHORT).show();
             return;
         }
         BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
         String callerName = (adapter != null) ? adapter.getName() : "我";
         if (callerName == null || callerName.isEmpty()) callerName = "我";
-        String callMsg = BluetoothService.TEXT_PREFIX + BluetoothService.CALL_PREFIX + callerName;
+        // ★★★ 使用接口常量 ★★★
+        String callMsg = IBluetoothService.TEXT_PREFIX + IBluetoothService.CALL_PREFIX + callerName;
         bluetoothService.write(callMsg.getBytes());
         Toast.makeText(getActivity(), "已召唤 " + bluetoothService.getConnectedDeviceName(), Toast.LENGTH_LONG).show();
     }
@@ -356,8 +391,10 @@ public class ChatWorkFragment extends Fragment implements
         Button btnSave = popupView.findViewById(R.id.btnSave);
         btnSave.setOnClickListener(v -> {
             popupWindow.dismiss();
-            if (message.getType() == Message.TYPE_IMAGE || message.getType() == Message.TYPE_FILE) saveFileToExternal(message);
-            else Toast.makeText(getActivity(), "只能保存文件", Toast.LENGTH_SHORT).show();
+            if (message.getType() == Message.TYPE_IMAGE || message.getType() == Message.TYPE_FILE)
+                saveFileToExternal(message);
+            else
+                Toast.makeText(getActivity(), "只能保存文件", Toast.LENGTH_SHORT).show();
         });
         Button btnDelete = popupView.findViewById(R.id.btnDelete);
         btnDelete.setOnClickListener(v -> {
@@ -375,7 +412,7 @@ public class ChatWorkFragment extends Fragment implements
         popupWindow.showAsDropDown(anchor, 0, -anchor.getHeight() - popupHeight);
     }
 
-    // ==================== 保存文件 ====================
+    // ==================== 保存文件到外部 ====================
     private void saveFileToExternal(Message message) {
         String srcPath = message.getFilePath();
         if (srcPath == null) { Toast.makeText(getActivity(), "文件路径无效", Toast.LENGTH_SHORT).show(); return; }
@@ -383,17 +420,24 @@ public class ChatWorkFragment extends Fragment implements
         if (!srcFile.exists()) { Toast.makeText(getActivity(), "文件不存在", Toast.LENGTH_SHORT).show(); return; }
         try {
             File destDir;
-            if (message.getType() == Message.TYPE_IMAGE) destDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM);
-            else destDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-            if (!destDir.exists() && !destDir.mkdirs()) { Toast.makeText(getActivity(), "无法创建目录", Toast.LENGTH_SHORT).show(); return; }
+            if (message.getType() == Message.TYPE_IMAGE)
+                destDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM);
+            else
+                destDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            if (!destDir.exists() && !destDir.mkdirs()) {
+                Toast.makeText(getActivity(), "无法创建目录", Toast.LENGTH_SHORT).show();
+                return;
+            }
             String originalName = message.getFileName();
             File destFile = new File(destDir, originalName);
             int count = 1;
             while (destFile.exists()) {
                 String name = originalName;
                 int dotIndex = originalName.lastIndexOf('.');
-                if (dotIndex > 0) name = originalName.substring(0, dotIndex) + "_" + count + originalName.substring(dotIndex);
-                else name = originalName + "_" + count;
+                if (dotIndex > 0)
+                    name = originalName.substring(0, dotIndex) + "_" + count + originalName.substring(dotIndex);
+                else
+                    name = originalName + "_" + count;
                 destFile = new File(destDir, name);
                 count++;
             }
@@ -402,13 +446,15 @@ public class ChatWorkFragment extends Fragment implements
             byte[] buffer = new byte[1024];
             int length;
             while ((length = fis.read(buffer)) > 0) fos.write(buffer, 0, length);
-            fos.close(); fis.close();
+            fos.close();
+            fis.close();
             if (message.getType() == Message.TYPE_IMAGE) {
-                MediaScannerConnection.scanFile(getActivity(), new String[]{destFile.getAbsolutePath()}, new String[]{"image/*"}, null);
+                MediaScannerConnection.scanFile(getActivity(), new String[]{destFile.getAbsolutePath()},
+                        new String[]{"image/*"}, null);
             }
             Toast.makeText(getActivity(), "已保存到: " + destFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
         } catch (IOException e) {
-            Log.e(TAG, "保存文件失败", e);
+            LogUtil.e(TAG, "保存文件失败", e);
             Toast.makeText(getActivity(), "保存失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
@@ -417,7 +463,7 @@ public class ChatWorkFragment extends Fragment implements
     private void sendMessage() {
         String message = etMessage.getText().toString().trim();
         if (TextUtils.isEmpty(message)) return;
-        if (bluetoothService == null || bluetoothService.getState() != BluetoothService.STATE_CONNECTED) {
+        if (bluetoothService == null || bluetoothService.getState() != IBluetoothService.STATE_CONNECTED) {
             pendingTextMessage = message;
             Toast.makeText(getActivity(), "未连接，正在重连...", Toast.LENGTH_LONG).show();
             if (deviceAddress != null && bluetoothService != null) {
@@ -433,7 +479,8 @@ public class ChatWorkFragment extends Fragment implements
     }
 
     private void doSendTextMessage(String message) {
-        String prefixed = BluetoothService.TEXT_PREFIX + message;
+        // ★★★ 使用接口常量 ★★★
+        String prefixed = IBluetoothService.TEXT_PREFIX + message;
         bluetoothService.write(prefixed.getBytes());
         etMessage.setText("");
         messageList.add(new Message(message, true, new Date()));
@@ -443,7 +490,7 @@ public class ChatWorkFragment extends Fragment implements
 
     // ==================== 发送文件 ====================
     private void sendFile() {
-        if (bluetoothService == null || bluetoothService.getState() != BluetoothService.STATE_CONNECTED) {
+        if (bluetoothService == null || bluetoothService.getState() != IBluetoothService.STATE_CONNECTED) {
             Toast.makeText(getActivity(), "未连接，正在重连...", Toast.LENGTH_LONG).show();
             if (deviceAddress != null && bluetoothService != null) {
                 BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
@@ -470,22 +517,18 @@ public class ChatWorkFragment extends Fragment implements
                     String fileName = getFileNameFromUri(uri);
                     if (TextUtils.isEmpty(fileName)) fileName = "file_" + System.currentTimeMillis();
 
-                    // ★★★ 获取文件大小 ★★★
                     long fileSize = getFileSizeFromUri(uri);
                     if (fileSize > MAX_FILE_SIZE) {
                         Toast.makeText(getActivity(), "文件过大，请选择小于" + (MAX_FILE_SIZE / 1024 / 1024) + "MB的文件", Toast.LENGTH_SHORT).show();
                         return;
                     }
 
-                    // ★★★ 根据大小选择处理方式 ★★★
                     if (fileSize <= MAX_MEMORY_FILE_SIZE) {
-                        // 小文件：一次性读入内存（原有方式）
                         InputStream is = resolver.openInputStream(uri);
                         byte[] bytes = readBytes(is);
                         is.close();
                         localFilePath = saveFileToLocal(bytes, fileName);
                     } else {
-                        // ★★★ 大文件：流式复制，不读入内存 ★★★
                         InputStream is = resolver.openInputStream(uri);
                         localFilePath = saveFileToLocalFromStream(is, fileName);
                         is.close();
@@ -493,11 +536,10 @@ public class ChatWorkFragment extends Fragment implements
 
                     pendingFileName = fileName;
                     pendingFileSize = fileSize;
-
                     sendFileRequest(fileName, fileSize, 0);
 
                 } catch (Exception e) {
-                    Log.e(TAG, "读取文件失败", e);
+                    LogUtil.e(TAG, "读取文件失败", e);
                     Toast.makeText(getActivity(), "读取文件失败", Toast.LENGTH_SHORT).show();
                 }
             }
@@ -515,7 +557,7 @@ public class ChatWorkFragment extends Fragment implements
             fos.close();
             return file.getAbsolutePath();
         } catch (IOException e) {
-            Log.e(TAG, "保存本地文件失败", e);
+            LogUtil.e(TAG, "保存本地文件失败", e);
             return null;
         }
     }
@@ -543,9 +585,9 @@ public class ChatWorkFragment extends Fragment implements
         return fileName;
     }
 
-    // ★★★ 发送文件请求（支持语音） ★★★
+    // ★★★ 发送文件请求（使用接口常量） ★★★
     private void sendFileRequest(String fileName, long size, int duration) {
-        String request = BluetoothService.TEXT_PREFIX + FILE_REQUEST_PREFIX + fileName + "," + size;
+        String request = IBluetoothService.TEXT_PREFIX + IBluetoothService.FILE_REQUEST_PREFIX + fileName + "," + size;
         if (duration > 0) request += ",VOICE," + duration;
         bluetoothService.write(request.getBytes());
         isWaitingForAccept = true;
@@ -560,32 +602,30 @@ public class ChatWorkFragment extends Fragment implements
         }, 30000);
     }
 
-    // 接收方处理文件请求（支持语音）
+    // 接收方处理文件请求
     private void handleFileRequest(String fileName, long size, int duration) {
         if (getActivity() == null) return;
 
-        // ★★★ 语音消息自动接收 ★★★
         if (duration > 0) {
             pendingReceiveFileName = fileName;
             pendingVoiceDuration = duration;
-            String acceptMsg = BluetoothService.TEXT_PREFIX + FILE_ACCEPT;
+            String acceptMsg = IBluetoothService.TEXT_PREFIX + IBluetoothService.FILE_ACCEPT;
             bluetoothService.write(acceptMsg.getBytes());
             pauseBluetoothAndStartFileReceive();
             return;
         }
 
-        // ★★★ 普通文件：显示确认对话框 ★★★
         pendingReceiveFileName = fileName;
         AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
         builder.setTitle("接收文件");
         builder.setMessage("对方发送文件: " + fileName + " (" + (size / 1024) + "KB)\n是否接收？");
         builder.setPositiveButton("接收", (dialog, which) -> {
-            String acceptMsg = BluetoothService.TEXT_PREFIX + FILE_ACCEPT;
+            String acceptMsg = IBluetoothService.TEXT_PREFIX + IBluetoothService.FILE_ACCEPT;
             bluetoothService.write(acceptMsg.getBytes());
             pauseBluetoothAndStartFileReceive();
         });
         builder.setNegativeButton("拒绝", (dialog, which) -> {
-            String rejectMsg = BluetoothService.TEXT_PREFIX + FILE_REJECT;
+            String rejectMsg = IBluetoothService.TEXT_PREFIX + IBluetoothService.FILE_REJECT;
             bluetoothService.write(rejectMsg.getBytes());
             Toast.makeText(getActivity(), "已拒绝接收文件", Toast.LENGTH_SHORT).show();
             pendingReceiveFileName = null;
@@ -593,7 +633,7 @@ public class ChatWorkFragment extends Fragment implements
         builder.setCancelable(false);
         builder.show();
     }
-    // 接收方：启动文件接收服务
+
     private void pauseBluetoothAndStartFileReceive() {
         if (getActivity() instanceof MainActivityNew) {
             ((MainActivityNew) getActivity()).setFileTransferring(true);
@@ -608,7 +648,6 @@ public class ChatWorkFragment extends Fragment implements
         Intent intent = new Intent(getActivity(), BluetoothFileTransferService.class);
         intent.putExtra("ACTION", "RECEIVE");
         intent.putExtra("SAVE_DIR", getActivity().getExternalFilesDir(null) + "/files");
-        // ★★★ 关键：传递文件名（用于接收端保存）★★★
         if (pendingReceiveFileName != null) {
             intent.putExtra("FILE_NAME", pendingReceiveFileName);
         }
@@ -617,7 +656,6 @@ public class ChatWorkFragment extends Fragment implements
         Toast.makeText(getActivity(), "开始接收文件...", Toast.LENGTH_SHORT).show();
     }
 
-    // 发送方：停止主服务，启动文件发送
     private void startFileSend(String filePath, String fileName) {
         if (getActivity() instanceof MainActivityNew) {
             ((MainActivityNew) getActivity()).setFileTransferring(true);
@@ -675,7 +713,7 @@ public class ChatWorkFragment extends Fragment implements
 
                 @Override
                 public void onRecordError(String error) {
-                    Log.e(TAG, "录音错误: " + error);
+                    LogUtil.e(TAG, "录音错误: " + error);
                     getActivity().runOnUiThread(() -> {
                         Toast.makeText(getActivity(), "录音失败: " + error, Toast.LENGTH_SHORT).show();
                         etMessage.setVisibility(View.VISIBLE);
@@ -695,21 +733,21 @@ public class ChatWorkFragment extends Fragment implements
             File file = new File(voiceDir, System.currentTimeMillis() + ".opus");
             voiceRecorder.startRecording(file);
         } catch (Exception e) {
-            Log.e(TAG, "启动录音失败", e);
+            LogUtil.e(TAG, "启动录音失败", e);
             Toast.makeText(getActivity(), "启动录音失败", Toast.LENGTH_SHORT).show();
-            // 恢复 UI
             etMessage.setVisibility(View.VISIBLE);
             btnSend.setVisibility(View.VISIBLE);
             btnMore.setVisibility(View.VISIBLE);
             btnVoice.setImageResource(R.drawable.ic_voice);
         }
     }
+
     private void stopVoiceRecordingAndSend() {
         if (voiceRecorder != null) voiceRecorder.stopRecording();
     }
 
     private void sendVoiceFile(File voiceFile, int duration) {
-        if (bluetoothService == null || bluetoothService.getState() != BluetoothService.STATE_CONNECTED) {
+        if (bluetoothService == null || bluetoothService.getState() != IBluetoothService.STATE_CONNECTED) {
             Toast.makeText(getActivity(), "未连接，无法发送语音", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -721,11 +759,10 @@ public class ChatWorkFragment extends Fragment implements
             localFilePath = voiceFile.getAbsolutePath();
             pendingFileName = voiceFile.getName();
             pendingFileSize = data.length;
-            // ★★★ 存储语音时长（用于接收端）★★★
             currentVoiceDuration = duration;
             sendFileRequest(voiceFile.getName(), data.length, duration);
         } catch (IOException e) {
-            Log.e(TAG, "读取语音文件失败", e);
+            LogUtil.e(TAG, "读取语音文件失败", e);
             Toast.makeText(getActivity(), "发送失败", Toast.LENGTH_SHORT).show();
         }
     }
@@ -736,13 +773,11 @@ public class ChatWorkFragment extends Fragment implements
         int position = messageList.indexOf(message);
         if (position < 0) return;
 
-        // ★★★ 点击同一语音 -> 停止播放 ★★★
         if (isVoicePlaying && currentPlayingVoice == message) {
             stopVoicePlayback();
             return;
         }
 
-        // 停止当前播放
         stopVoicePlayback();
 
         String path = message.getFilePath();
@@ -751,7 +786,6 @@ public class ChatWorkFragment extends Fragment implements
             return;
         }
 
-        // 开始新的播放
         try {
             byte[] data = new byte[(int) new File(path).length()];
             FileInputStream fis = new FileInputStream(new File(path));
@@ -762,11 +796,9 @@ public class ChatWorkFragment extends Fragment implements
                 voiceRecorder = new VoiceRecorder(null);
             }
 
-            // ★★★ 传入播放监听器 ★★★
             voiceRecorder.playVoice(data, data.length, message.getVoiceDuration(), new VoiceRecorder.OnPlayListener() {
                 @Override
                 public void onPlayStart() {
-                    // 开始闪烁
                     isVoicePlaying = true;
                     currentPlayingVoice = message;
                     playingPosition = position;
@@ -775,22 +807,21 @@ public class ChatWorkFragment extends Fragment implements
 
                 @Override
                 public void onPlayFinish() {
-                    // 停止闪烁
                     stopVoicePlayback();
                 }
             });
         } catch (IOException e) {
-            Log.e(TAG, "读取语音文件失败", e);
+            LogUtil.e(TAG, "读取语音文件失败", e);
             Toast.makeText(getActivity(), "播放失败", Toast.LENGTH_SHORT).show();
         }
     }
+
     private void startVoiceBlink(int position) {
         voiceBlinkRunnable = new Runnable() {
             private boolean visible = true;
             @Override
             public void run() {
                 if (!isVoicePlaying) {
-                    // 停止闪烁，恢复图标
                     updateVoiceIcon(position, true);
                     return;
                 }
@@ -815,7 +846,6 @@ public class ChatWorkFragment extends Fragment implements
     private void stopVoicePlayback() {
         isVoicePlaying = false;
         voiceBlinkHandler.removeCallbacks(voiceBlinkRunnable);
-        // 恢复图标
         if (playingPosition >= 0) {
             updateVoiceIcon(playingPosition, true);
             playingPosition = -1;
@@ -825,6 +855,7 @@ public class ChatWorkFragment extends Fragment implements
             voiceRecorder.stopPlayback();
         }
     }
+
     // ==================== 文件传输回调 ====================
     @Override
     public void onProgressUpdate(long totalBytes, long transferredBytes, int progress) {
@@ -848,7 +879,6 @@ public class ChatWorkFragment extends Fragment implements
     public void onTransferComplete(boolean success, String filePath) {
         if (getActivity() == null) return;
         getActivity().runOnUiThread(() -> {
-            // 解绑文件传输服务
             if (fileTransferBound) {
                 fileTransferService.unregisterCallback(this);
                 getActivity().unbindService(fileTransferConnection);
@@ -856,40 +886,33 @@ public class ChatWorkFragment extends Fragment implements
             }
             getActivity().stopService(new Intent(getActivity(), BluetoothFileTransferService.class));
 
-            // 更新主Activity状态
             if (getActivity() instanceof MainActivityNew) {
                 ((MainActivityNew) getActivity()).setFileTransferring(false);
                 ((MainActivityNew) getActivity()).updateStatusDisplay();
             }
 
-            // 重置进度变量
             lastProgressBytes = 0;
             lastProgressTime = 0;
 
             if (success) {
                 if (isFileSender) {
-                    // 发送方：判断是否为语音
                     if (pendingFileName.endsWith(".opus") || pendingVoiceDuration > 0) {
                         addVoiceMessage(true, localFilePath, currentVoiceDuration);
                     } else {
                         addFileMessage(true, localFilePath, pendingFileName, pendingFileSize);
                     }
                 } else {
-                    // 接收方：判断是否为语音
                     File file = new File(filePath);
                     if (pendingVoiceDuration > 0) {
-                        // 语音消息
                         addVoiceMessage(false, filePath, pendingVoiceDuration);
-                        pendingVoiceDuration = 0; // 重置
+                        pendingVoiceDuration = 0;
                     } else {
-                        // 普通文件
                         String displayName = pendingReceiveFileName != null ? pendingReceiveFileName : file.getName();
                         addFileMessage(false, filePath, displayName, file.length());
                         pendingReceiveFileName = null;
                     }
                 }
 
-                // 显示速度
                 long fileSize = isFileSender ? pendingFileSize : new File(filePath).length();
                 long elapsed = System.currentTimeMillis() - transferStartTime;
                 if (elapsed > 0) {
@@ -906,7 +929,6 @@ public class ChatWorkFragment extends Fragment implements
                 }
             }
 
-            // 恢复蓝牙服务
             resumeBluetoothService();
         });
     }
@@ -937,7 +959,7 @@ public class ChatWorkFragment extends Fragment implements
 
     private void resumeBluetoothService() {
         if (serviceBound && bluetoothService != null) {
-            if (bluetoothService.getState() == BluetoothService.STATE_NONE) bluetoothService.start();
+            if (bluetoothService.getState() == IBluetoothService.STATE_NONE) bluetoothService.start();
             if (isFileSender) {
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
@@ -958,48 +980,43 @@ public class ChatWorkFragment extends Fragment implements
     public void onMessageReceived(String message, String deviceAddress) {
         if (getActivity() == null) return;
         getActivity().runOnUiThread(() -> {
-            // ★★★ 如果当前 deviceAddress 未设置，则自动设为第一个发来消息的设备 ★★★
             if (this.deviceAddress == null && deviceAddress != null) {
                 this.deviceAddress = deviceAddress;
-                // 尝试从 BluetoothService 获取设备名称
                 if (bluetoothService != null) {
                     String name = bluetoothService.getConnectedDeviceName();
                     if (name != null && !name.isEmpty()) {
                         this.deviceName = name;
                     }
                 }
-                // 加载该设备的历史记录
                 loadChatHistory();
-                // 更新标题
                 tvDeviceName.setText(this.deviceName + " (已连接)");
             }
 
-            // ★★★ 接受来自当前 deviceAddress 的消息（或 deviceAddress 为 null 时接受任何消息）★★★
             if (this.deviceAddress != null && !this.deviceAddress.equals(deviceAddress)) {
-                Log.d(TAG, "忽略来自其他设备的消息: " + deviceAddress);
+                LogUtil.d(TAG, "忽略来自其他设备的消息: " + deviceAddress);
                 return;
             }
 
-            Log.d(TAG, "收到消息原始内容: [" + message + "]");
+            LogUtil.d(TAG, "收到消息原始内容: [" + message + "]");
 
-            // 1. 呼叫控制消息（最高优先级）
-            if (message.startsWith(BluetoothService.CALL_REQUEST)) {
-                Log.d(TAG, "检测到呼叫请求消息");
-                String callerName = message.substring(BluetoothService.CALL_REQUEST.length());
+            // ★★★ 使用接口常量判断 ★★★
+            if (message.startsWith(IBluetoothService.CALL_REQUEST)) {
+                LogUtil.d(TAG, "检测到呼叫请求消息");
+                String callerName = message.substring(IBluetoothService.CALL_REQUEST.length());
                 if (callerName.isEmpty()) callerName = "未知用户";
                 if (getActivity() instanceof MainActivityNew) {
                     ((MainActivityNew) getActivity()).onCallRequest(callerName, deviceAddress);
                 }
                 return;
             }
-            if (message.trim().equals(BluetoothService.CALL_ACCEPT) ||
-                    message.trim().equals(BluetoothService.CALL_REJECT) ||
-                    message.trim().equals(BluetoothService.CALL_HANGUP)) {
-                Log.d(TAG, "检测到呼叫控制消息: " + message);
+            if (message.trim().equals(IBluetoothService.CALL_ACCEPT) ||
+                    message.trim().equals(IBluetoothService.CALL_REJECT) ||
+                    message.trim().equals(IBluetoothService.CALL_HANGUP)) {
+                LogUtil.d(TAG, "检测到呼叫控制消息: " + message);
                 if (getActivity() instanceof MainActivityNew) {
-                    if (message.trim().equals(BluetoothService.CALL_ACCEPT))
+                    if (message.trim().equals(IBluetoothService.CALL_ACCEPT))
                         ((MainActivityNew) getActivity()).onCallAccepted(deviceAddress);
-                    else if (message.trim().equals(BluetoothService.CALL_REJECT))
+                    else if (message.trim().equals(IBluetoothService.CALL_REJECT))
                         ((MainActivityNew) getActivity()).onCallRejected(deviceAddress);
                     else
                         ((MainActivityNew) getActivity()).onCallHungUp(deviceAddress);
@@ -1007,11 +1024,10 @@ public class ChatWorkFragment extends Fragment implements
                 return;
             }
 
-            // 2. 文件请求（含语音）
-            if (message.startsWith(FILE_REQUEST_PREFIX)) {
-                Log.d(TAG, "检测到文件请求消息");
+            if (message.startsWith(IBluetoothService.FILE_REQUEST_PREFIX)) {
+                LogUtil.d(TAG, "检测到文件请求消息");
                 if (processedMessages.contains(message)) {
-                    Log.d(TAG, "重复文件请求消息，已忽略");
+                    LogUtil.d(TAG, "重复文件请求消息，已忽略");
                     return;
                 }
                 processedMessages.add(message);
@@ -1019,14 +1035,14 @@ public class ChatWorkFragment extends Fragment implements
                     processedMessages.remove(message);
                 }, 5000);
 
-                String[] parts = message.substring(FILE_REQUEST_PREFIX.length()).split(",");
+                String[] parts = message.substring(IBluetoothService.FILE_REQUEST_PREFIX.length()).split(",");
                 if (parts.length >= 2) {
                     String fileName = parts[0];
                     long size;
                     try {
                         size = Long.parseLong(parts[1]);
                     } catch (NumberFormatException e) {
-                        Log.e(TAG, "解析文件大小失败", e);
+                        LogUtil.e(TAG, "解析文件大小失败", e);
                         return;
                     }
                     int duration = 0;
@@ -1038,34 +1054,32 @@ public class ChatWorkFragment extends Fragment implements
                 return;
             }
 
-            // 3. 召唤消息
-            if (message.startsWith(BluetoothService.CALL_PREFIX)) {
-                String callerName = message.substring(BluetoothService.CALL_PREFIX.length());
+            if (message.startsWith(IBluetoothService.CALL_PREFIX)) {
+                String callerName = message.substring(IBluetoothService.CALL_PREFIX.length());
                 if (callerName.isEmpty()) callerName = "未知用户";
                 Toast.makeText(getActivity(), "📢 " + callerName + " 召唤您！", Toast.LENGTH_LONG).show();
                 return;
             }
 
-            // 4. 文件接受/拒绝
-            if (message.trim().equals(FILE_ACCEPT)) {
-                Log.d(TAG, "收到对方同意文件接收");
+            if (message.trim().equals(IBluetoothService.FILE_ACCEPT)) {
+                LogUtil.d(TAG, "收到对方同意文件接收");
                 if (isWaitingForAccept && localFilePath != null && new File(localFilePath).exists()) {
                     startFileSend(localFilePath, pendingFileName);
                 } else {
-                    Log.e(TAG, "文件不存在或等待状态异常");
+                    LogUtil.e(TAG, "文件不存在或等待状态异常");
                     Toast.makeText(getActivity(), "文件已丢失", Toast.LENGTH_SHORT).show();
                 }
                 return;
             }
-            if (message.trim().equals(FILE_REJECT)) {
-                Log.d(TAG, "收到对方拒绝文件接收");
+            if (message.trim().equals(IBluetoothService.FILE_REJECT)) {
+                LogUtil.d(TAG, "收到对方拒绝文件接收");
                 isWaitingForAccept = false;
                 localFilePath = null;
                 Toast.makeText(getActivity(), "对方拒绝了文件", Toast.LENGTH_SHORT).show();
                 return;
             }
 
-            // 5. 普通文本消息（去重）
+            // 普通文本
             boolean exists = false;
             long now = new Date().getTime();
             for (Message msg : messageList) {
@@ -1082,15 +1096,15 @@ public class ChatWorkFragment extends Fragment implements
             }
         });
     }
+
     @Override
     public void onConnectionStatusChanged(int state, String deviceName) {
         if (getActivity() == null) return;
         getActivity().runOnUiThread(() -> {
             final String displayName = (deviceName != null && !deviceName.isEmpty()) ? deviceName : "未知设备";
             switch (state) {
-                case BluetoothService.STATE_CONNECTED:
+                case IBluetoothService.STATE_CONNECTED:
                     tvDeviceName.setText(displayName + " (已连接)");
-                    // ★★★ 更新 deviceAddress 和 deviceName ★★★
                     String connectedAddr = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
                     if (connectedAddr != null) {
                         if (deviceAddress == null || !deviceAddress.equals(connectedAddr)) {
@@ -1110,40 +1124,83 @@ public class ChatWorkFragment extends Fragment implements
                         Toast.makeText(getActivity(), "重连成功，已发送消息", Toast.LENGTH_SHORT).show();
                     }
                     break;
-                case BluetoothService.STATE_CONNECTING:
+                case IBluetoothService.STATE_CONNECTING:
                     tvDeviceName.setText(displayName + " (连接中...)");
                     break;
-                case BluetoothService.STATE_LISTEN:
+                case IBluetoothService.STATE_LISTEN:
                     tvDeviceName.setText("等待连接...");
                     break;
             }
         });
     }
+
     @Override
     public void onNonTextDataReceived(String deviceAddress) {
         if (getActivity() == null) return;
         getActivity().runOnUiThread(() -> {
             if (this.deviceAddress != null && this.deviceAddress.equals(deviceAddress)) {
-                // ★★★ 只有在当前 Fragment 为 TalkbackFragment 时才切换，否则忽略 ★★★
                 Fragment currentFragment = getActivity().getSupportFragmentManager().findFragmentById(R.id.fragment_container);
                 if (currentFragment instanceof TalkbackFragment) {
+                    // 已经在对讲模式，沿用原有计数逻辑（可保留或简化）
                     nonTextDataCount++;
                     nonTextHandler.removeCallbacks(resetNonTextDataCount);
                     if (nonTextDataCount >= 2) {
+                        // 这里再次切换（实际无意义，可改为重置超时等）
                         switchToTalkbackFragment();
                     } else {
                         nonTextHandler.postDelayed(resetNonTextDataCount, 1000);
                     }
                 } else {
-                    // 聊天模式下收到非文本数据，忽略（不切换）
-                    Log.d(TAG, "聊天模式下忽略非文本数据");
+                    // ★★★ 修复点：聊天模式下收到非文本数据 → 自动切换到对讲模式 ★★★
+                    Toast.makeText(getActivity(), "检测到对讲数据，自动切换至对讲模式", Toast.LENGTH_SHORT).show();
+                    // 先设置模式为 TALKBACK
+                    if (bluetoothService != null) {
+                        bluetoothService.setMode(IBluetoothService.MODE_TALKBACK);
+                    }
+                    // 切换到 TalkbackFragment
+                    if (getActivity() instanceof MainActivityNew) {
+                        String name = bluetoothService != null ? bluetoothService.getConnectedDeviceName() : "未知设备";
+                        ((MainActivityNew) getActivity()).switchToFragment("TalkbackFragment", deviceAddress, name);
+                    }
                 }
             }
         });
     }
-    @Override public void onTalkbackDataReceived(byte[] data, String deviceAddress) {}
 
-    // ==================== 消息操作 ====================
+    @Override
+    public void onTalkbackDataReceived(byte[] data, String deviceAddress) {
+        // 无需处理
+    }
+
+    @Override
+    public void onCallRequest(String callerName, String deviceAddress) {
+        if (getActivity() instanceof MainActivityNew) {
+            ((MainActivityNew) getActivity()).onCallRequest(callerName, deviceAddress);
+        }
+    }
+
+    @Override
+    public void onCallAccepted(String deviceAddress) {
+        if (getActivity() instanceof MainActivityNew) {
+            ((MainActivityNew) getActivity()).onCallAccepted(deviceAddress);
+        }
+    }
+
+    @Override
+    public void onCallRejected(String deviceAddress) {
+        if (getActivity() instanceof MainActivityNew) {
+            ((MainActivityNew) getActivity()).onCallRejected(deviceAddress);
+        }
+    }
+
+    @Override
+    public void onCallHungUp(String deviceAddress) {
+        if (getActivity() instanceof MainActivityNew) {
+            ((MainActivityNew) getActivity()).onCallHungUp(deviceAddress);
+        }
+    }
+
+    // ==================== 消息操作（复制、打开、删除） ====================
     private void copyMessageToClipboard(Message message) {
         String content;
         if (message.getType() == Message.TYPE_IMAGE || message.getType() == Message.TYPE_FILE) {
@@ -1233,13 +1290,15 @@ public class ChatWorkFragment extends Fragment implements
                         osw.write(timestamp + ": " + sender + ": " + msg.getContent() + "\n");
                     }
                 }
-                osw.close(); fos.close();
+                osw.close();
+                fos.close();
             }
-        } catch (IOException e) { Log.e(TAG, "更新聊天记录文件失败", e); }
+        } catch (IOException e) { LogUtil.e(TAG, "更新聊天记录文件失败", e); }
     }
 
     private void loadChatHistory() {
         if (serviceBound && deviceAddress != null) {
+            // ★★★ 通过接口加载历史 ★★★
             String history = bluetoothService.loadChatHistory(deviceAddress);
             if (!TextUtils.isEmpty(history)) {
                 Set<Message> uniqueMessages = new LinkedHashSet<>();
@@ -1285,7 +1344,7 @@ public class ChatWorkFragment extends Fragment implements
                                 msg = new Message(content, isSent, timestamp);
                             }
                             if (msg != null) uniqueMessages.add(msg);
-                        } catch (Exception e) { Log.e(TAG, "解析聊天记录失败: " + line, e); }
+                        } catch (Exception e) { LogUtil.e(TAG, "解析聊天记录失败: " + line, e); }
                     }
                 }
                 messageList.clear();
@@ -1356,9 +1415,10 @@ public class ChatWorkFragment extends Fragment implements
                     osw.write(time + " [" + sender + "]: " + msg.getContent() + "\n");
                 }
             }
-            osw.close(); fos.close();
+            osw.close();
+            fos.close();
             Toast.makeText(getActivity(), "聊天记录已导出到: " + exportFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
-        } catch (IOException e) { Log.e(TAG, "导出聊天记录失败", e); Toast.makeText(getActivity(), "导出失败: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }
+        } catch (IOException e) { LogUtil.e(TAG, "导出聊天记录失败", e); Toast.makeText(getActivity(), "导出失败: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }
     }
 
     private void startTalkbackActivity() {
@@ -1368,11 +1428,11 @@ public class ChatWorkFragment extends Fragment implements
         intent.putExtra("LOAD_FRAGMENT", "TalkbackFragment");
         startActivity(intent);
     }
+
     private long getFileSizeFromUri(Uri uri) {
         long size = 0;
         try {
             ContentResolver resolver = getActivity().getContentResolver();
-            // 方法1：通过 MediaStore 查询（适用于 content://）
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 try (Cursor cursor = resolver.query(uri, new String[]{MediaStore.MediaColumns.SIZE}, null, null, null)) {
                     if (cursor != null && cursor.moveToFirst()) {
@@ -1383,7 +1443,6 @@ public class ChatWorkFragment extends Fragment implements
                     }
                 }
             }
-            // 方法2：通过 AssetFileDescriptor 获取（适用于 file:// 和部分 content://）
             if (size == 0) {
                 try (AssetFileDescriptor fd = resolver.openAssetFileDescriptor(uri, "r")) {
                     if (fd != null) {
@@ -1392,10 +1451,11 @@ public class ChatWorkFragment extends Fragment implements
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "获取文件大小失败", e);
+            LogUtil.e(TAG, "获取文件大小失败", e);
         }
         return size;
     }
+
     private String saveFileToLocalFromStream(InputStream inputStream, String fileName) {
         try {
             File dir = new File(getActivity().getExternalFilesDir(null), "files");
@@ -1403,7 +1463,7 @@ public class ChatWorkFragment extends Fragment implements
             String timeStamp = String.valueOf(System.currentTimeMillis());
             File file = new File(dir, timeStamp + "_" + fileName);
             FileOutputStream fos = new FileOutputStream(file);
-            byte[] buffer = new byte[8192]; // 8KB 缓冲区
+            byte[] buffer = new byte[8192];
             int len;
             while ((len = inputStream.read(buffer)) != -1) {
                 fos.write(buffer, 0, len);
@@ -1411,43 +1471,15 @@ public class ChatWorkFragment extends Fragment implements
             fos.close();
             return file.getAbsolutePath();
         } catch (IOException e) {
-            Log.e(TAG, "保存本地文件失败（流式）", e);
+            LogUtil.e(TAG, "保存本地文件失败（流式）", e);
             return null;
         }
     }
+
     private void switchToTalkbackFragment() {
         Toast.makeText(getActivity(), "检测到对讲连接，正在切换...", Toast.LENGTH_SHORT).show();
         if (getActivity() instanceof MainActivityNew) {
             ((MainActivityNew) getActivity()).switchToFragment("TalkbackFragment", deviceAddress, deviceName);
-        }
-    }
-    // 在 ChatWorkFragment 中添加
-    // ==================== 呼叫回调（转发给主Activity） ====================
-    @Override
-    public void onCallRequest(String callerName, String deviceAddress) {
-        if (getActivity() instanceof MainActivityNew) {
-            ((MainActivityNew) getActivity()).onCallRequest(callerName, deviceAddress);
-        }
-    }
-
-    @Override
-    public void onCallAccepted(String deviceAddress) {
-        if (getActivity() instanceof MainActivityNew) {
-            ((MainActivityNew) getActivity()).onCallAccepted(deviceAddress);
-        }
-    }
-
-    @Override
-    public void onCallRejected(String deviceAddress) {
-        if (getActivity() instanceof MainActivityNew) {
-            ((MainActivityNew) getActivity()).onCallRejected(deviceAddress);
-        }
-    }
-
-    @Override
-    public void onCallHungUp(String deviceAddress) {
-        if (getActivity() instanceof MainActivityNew) {
-            ((MainActivityNew) getActivity()).onCallHungUp(deviceAddress);
         }
     }
 }
