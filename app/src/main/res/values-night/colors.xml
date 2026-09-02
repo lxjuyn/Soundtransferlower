@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 暗色模式：同名 md3_* token 重映射为暗色值，布局零改动自动适配 -->
+<resources>
+    <color name="md3_primary">#BCC2FF</color>
+    <color name="md3_on_primary">#1F3080</color>
+    <color name="md3_primary_container">#36479F</color>
+    <color name="md3_on_primary_container">#DEE0FF</color>
+    <color name="md3_secondary">#BFC2DC</color>
+    <color name="md3_on_secondary">#292F42</color>
+    <color name="md3_secondary_container">#3F4759</color>
+    <color name="md3_on_secondary_container">#DDE1F9</color>
+    <color name="md3_tertiary">#E3BAD9</color>
+    <color name="md3_on_tertiary">#43273E</color>
+    <color name="md3_tertiary_container">#5B3D55</color>
+    <color name="md3_on_tertiary_container">#FFD7F0</color>
+    <color name="md3_surface">#121318</color>
+    <color name="md3_surface_dim">#121318</color>
+    <color name="md3_surface_bright">#38393F</color>
+    <color name="md3_on_surface">#E4E2EC</color>
+    <color name="md3_on_surface_variant">#C7C5D0</color>
+    <color name="md3_surface_container_lowest">#0D0E13</color>
+    <color name="md3_surface_container_low">#1A1B21</color>
+    <color name="md3_surface_container">#1E1F25</color>
+    <color name="md3_surface_container_high">#282A30</color>
+    <color name="md3_surface_container_highest">#33343B</color>
+    <color name="md3_surface_variant">#46464F</color>
+    <color name="md3_outline">#90909A</color>
+    <color name="md3_outline_variant">#46464F</color>
+    <color name="md3_error">#FFB4AB</color>
+    <color name="md3_on_error">#690005</color>
+    <color name="md3_error_container">#93000A</color>
+    <color name="md3_on_error_container">#FFDAD6</color>
+    <color name="md3_inverse_surface">#E4E2EC</color>
+    <color name="md3_inverse_on_surface">#2F3036</color>
+    <color name="md3_inverse_primary">#4355B9</color>
+    <color name="md3_scrim">#000000</color>
+    <color name="md3_hero_start">#5664C6</color>
+    <color name="md3_hero_end">#26306B</color>
+    <color name="md3_dot_on">#7FDCA4</color>
+    <color name="md3_dot_off">#66FFFFFF</color>
+</resources>

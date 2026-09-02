@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 版本徽章药丸（叠在 Hero 渐变上）：白色 20% 透明底，full 圆角 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#33FFFFFF" />
+    <corners android:radius="200dp" />
+</shape>

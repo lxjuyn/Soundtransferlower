@@ -18,36 +18,45 @@
         <color name="content_background">#FFFFFF</color>
         <color name="text_secondary">#757575</color>
 
-    <!-- MD3 Color Tokens - Light -->
-    <color name="md3_primary">#1A6B52</color>
+    <!-- MD3 Color Tokens - Light (indigo seed #3F51B5, Material Theme Builder) -->
+    <color name="md3_primary">#4355B9</color>
     <color name="md3_on_primary">#FFFFFF</color>
-    <color name="md3_primary_container">#A8F2DC</color>
-    <color name="md3_on_primary_container">#00201A</color>
-    <color name="md3_secondary">#4A635B</color>
+    <color name="md3_primary_container">#DEE0FF</color>
+    <color name="md3_on_primary_container">#00105C</color>
+    <color name="md3_secondary">#595D72</color>
     <color name="md3_on_secondary">#FFFFFF</color>
-    <color name="md3_secondary_container">#CCE8DE</color>
-    <color name="md3_on_secondary_container">#0A1F19</color>
-    <color name="md3_tertiary">#406376</color>
+    <color name="md3_secondary_container">#DDE1F9</color>
+    <color name="md3_on_secondary_container">#161B2C</color>
+    <color name="md3_tertiary">#75546F</color>
     <color name="md3_on_tertiary">#FFFFFF</color>
-    <color name="md3_tertiary_container">#C3E8FD</color>
-    <color name="md3_on_tertiary_container">#001E2E</color>
-    <color name="md3_surface">#F5FBF7</color>
-    <color name="md3_surface_dim">#D5DBD7</color>
-    <color name="md3_surface_bright">#F5FBF7</color>
-    <color name="md3_on_surface">#171D1A</color>
-    <color name="md3_on_surface_variant">#3F4945</color>
-    <color name="md3_surface_container_low">#EFF5F1</color>
-    <color name="md3_surface_container">#E9F0EC</color>
-    <color name="md3_surface_container_high">#E3EAE6</color>
-    <color name="md3_outline">#6F7975</color>
-    <color name="md3_outline_variant">#BFC9C4</color>
+    <color name="md3_tertiary_container">#FFD7F0</color>
+    <color name="md3_on_tertiary_container">#2D1228</color>
+    <color name="md3_surface">#FBF8FF</color>
+    <color name="md3_surface_dim">#DBD9E3</color>
+    <color name="md3_surface_bright">#FBF8FF</color>
+    <color name="md3_on_surface">#1A1B21</color>
+    <color name="md3_on_surface_variant">#46464F</color>
+    <color name="md3_surface_container_lowest">#FFFFFF</color>
+    <color name="md3_surface_container_low">#F5F2FC</color>
+    <color name="md3_surface_container">#EFEDF7</color>
+    <color name="md3_surface_container_high">#E9E7F2</color>
+    <color name="md3_surface_container_highest">#E4E2EC</color>
+    <color name="md3_surface_variant">#E3E1EC</color>
+    <color name="md3_outline">#767680</color>
+    <color name="md3_outline_variant">#C7C5D0</color>
     <color name="md3_error">#BA1A1A</color>
     <color name="md3_on_error">#FFFFFF</color>
     <color name="md3_error_container">#FFDAD6</color>
-    <color name="md3_inverse_surface">#2C322F</color>
-    <color name="md3_inverse_on_surface">#ECF2EE</color>
-    <color name="md3_inverse_primary">#8DD5C1</color>
+    <color name="md3_on_error_container">#410002</color>
+    <color name="md3_inverse_surface">#2F3036</color>
+    <color name="md3_inverse_on_surface">#F1F0F7</color>
+    <color name="md3_inverse_primary">#BCC2FF</color>
     <color name="md3_scrim">#000000</color>
+    <!-- Hero 渐变与状态点（亮色） -->
+    <color name="md3_hero_start">#4C5DD3</color>
+    <color name="md3_hero_end">#2E3C8E</color>
+    <color name="md3_dot_on">#7FDCA4</color>
+    <color name="md3_dot_off">#66FFFFFF</color>
 
     <!-- MD3 Color Tokens - Dark -->
     <color name="md3_dark_primary">#8DD5C1</color>

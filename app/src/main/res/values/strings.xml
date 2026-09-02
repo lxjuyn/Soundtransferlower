@@ -17,4 +17,37 @@
 \n原始仓库：https://gitee.com/yonstus/Soundtransferlower
 \n感谢原作者的开源贡献。
     </string>
+
+    <!-- 设置页 (SettingsFragment) -->
+    <string name="settings_title">设置</string>
+    <string name="settings_tagline">蓝牙对讲 · 免流传输 · 点对点直连</string>
+    <string name="settings_status_disconnected">未连接</string>
+    <string name="settings_status_connected_fmt">已连接 · %s</string>
+    <string name="settings_section_bluetooth">蓝牙</string>
+    <string name="settings_section_notification">通知</string>
+    <string name="settings_section_about">关于</string>
+    <string name="settings_device_name">设备名称</string>
+    <string name="settings_device_name_sub">对外显示的蓝牙名称</string>
+    <string name="settings_unknown">未知</string>
+    <string name="settings_modify">修改</string>
+    <string name="settings_rename_dialog_title">修改设备名称</string>
+    <string name="settings_save">保存</string>
+    <string name="settings_cancel">取消</string>
+    <string name="settings_rename_done">设备名称已修改</string>
+    <string name="settings_auto_reconnect">自动重连</string>
+    <string name="settings_auto_reconnect_sub">断线后自动恢复连接</string>
+    <string name="settings_talkback_timeout">对讲超时</string>
+    <string name="settings_talkback_timeout_sub">无活动自动断开对讲</string>
+    <string name="settings_timeout_dialog_title">对讲无活动断开时间</string>
+    <string name="settings_seconds_fmt">%d 秒</string>
+    <string name="settings_call_reminder">召唤提醒</string>
+    <string name="settings_call_reminder_sub">收到召唤时弹出提醒通知</string>
+    <string name="settings_vibration">振动反馈</string>
+    <string name="settings_vibration_sub">连接成功时振动提示</string>
+    <string name="settings_version">版本</string>
+    <string name="settings_author">作者</string>
+    <string name="settings_open_source">开源地址</string>
+    <string name="settings_open_source_value">GitHub</string>
+    <string name="settings_source_note">二次开发来源</string>
+    <string name="settings_source_note_sub">基于秋元的纸条项目二次开发\n原始仓库：gitee.com/yonstus/Soundtransferlower</string>
 </resources>

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- MD3 设置页：靛蓝 tonal 分组卡 + 40dp 图标芯片 + M3 规格 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/md3_surface"
@@ -8,61 +10,53 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingBottom="24dp">
 
-        <!-- TopAppBar -->
+        <!-- 顶栏 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="56dp"
             android:background="@color/md3_surface"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingLeft="4dp"
+            android:paddingLeft="8dp"
             android:paddingRight="16dp">
 
-            <TextView
+            <ImageView
                 android:id="@+id/btnSettingsBack"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:gravity="center"
-                android:text="←"
-                android:textColor="@color/md3_on_surface"
-                android:textSize="24sp" />
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/bg_md3_back_btn"
+                android:contentDescription="@string/back_button_desc"
+                android:padding="9dp"
+                android:src="@drawable/ic_md3_arrow_back"
+                app:tint="@color/md3_on_surface" />
 
             <TextView
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="设置"
+                android:layout_marginLeft="12dp"
+                android:text="@string/settings_title"
                 android:textColor="@color/md3_on_surface"
                 android:textSize="22sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- 蓝牙设置卡片 -->
+        <!-- Hero 头卡 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginLeft="16dp"
             android:layout_marginRight="16dp"
             android:layout_marginTop="8dp"
-            android:background="@drawable/bg_md3_card"
+            android:background="@drawable/bg_md3_hero"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="20dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="蓝牙设置"
-                android:textColor="@color/md3_primary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <!-- 设备名称 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -70,34 +64,147 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="设备名称"
-                    android:textColor="@color/md3_on_surface"
-                    android:textSize="16sp" />
+                    android:text="@string/app_name"
+                    android:textColor="#FFFFFF"
+                    android:textSize="24sp"
+                    android:textStyle="bold" />
 
                 <TextView
-                    android:id="@+id/tvDeviceName"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:gravity="end"
-                    android:text="未知"
-                    android:textColor="@color/md3_on_surface_variant"
-                    android:textSize="14sp" />
-
-                <Button
-                    android:id="@+id/btnModifyName"
-                    style="@style/Widget.AppCompat.Button.Borderless.Colored"
+                    android:id="@+id/tvVersionPill"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="修改"
-                    android:textColor="@color/md3_primary" />
+                    android:background="@drawable/bg_md3_pill"
+                    android:paddingLeft="12dp"
+                    android:paddingRight="12dp"
+                    android:paddingTop="5dp"
+                    android:paddingBottom="5dp"
+                    android:text="2.9.3fix"
+                    android:textColor="#E7EAFF"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/settings_tagline"
+                android:textColor="#CCFFFFFF"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:id="@+id/dotStatus"
+                    android:layout_width="8dp"
+                    android:layout_height="8dp"
+                    android:background="@drawable/shape_md3_dot_off" />
+
+                <TextView
+                    android:id="@+id/tvConnectionStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="8dp"
+                    android:text="@string/settings_status_disconnected"
+                    android:textColor="#E8FFFFFF"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 分组：蓝牙 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="28dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="8dp"
+            android:text="@string/settings_section_bluetooth"
+            android:textColor="@color/md3_on_surface_variant"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="16dp"
+            android:layout_marginRight="16dp"
+            android:background="@drawable/bg_md3_card"
+            android:orientation="vertical"
+            android:paddingBottom="4dp"
+            android:paddingTop="4dp">
+
+            <!-- 设备名称 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp">
+
+                <FrameLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_md3_chip_primary">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_md3_bluetooth"
+                        app:tint="@color/md3_on_primary_container" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="14dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_device_name"
+                        android:textColor="@color/md3_on_surface"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:id="@+id/tvDeviceName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/settings_unknown"
+                        android:textColor="@color/md3_on_surface_variant"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/btnModifyName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_md3_chip_primary"
+                    android:paddingLeft="14dp"
+                    android:paddingRight="14dp"
+                    android:paddingTop="7dp"
+                    android:paddingBottom="7dp"
+                    android:text="@string/settings_modify"
+                    android:textColor="@color/md3_on_primary_container"
+                    android:textSize="13sp" />
             </LinearLayout>
 
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="12dp"
+                android:layout_marginLeft="70dp"
+                android:layout_marginRight="16dp"
+                android:alpha="0.55"
                 android:background="@color/md3_outline_variant" />
 
             <!-- 自动重连 -->
@@ -105,100 +212,218 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp">
 
-                <TextView
+                <FrameLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_md3_chip_secondary">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_md3_refresh"
+                        app:tint="@color/md3_on_secondary_container" />
+                </FrameLayout>
+
+                <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginLeft="14dp"
                     android:layout_weight="1"
-                    android:text="自动重连"
-                    android:textColor="@color/md3_on_surface"
-                    android:textSize="16sp" />
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_auto_reconnect"
+                        android:textColor="@color/md3_on_surface"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/settings_auto_reconnect_sub"
+                        android:textColor="@color/md3_on_surface_variant"
+                        android:textSize="13sp" />
+                </LinearLayout>
 
                 <androidx.appcompat.widget.SwitchCompat
                     android:id="@+id/switchAutoReconnect"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:thumb="@drawable/bg_md3_switch_thumb"
+                    app:showText="false"
+                    app:track="@drawable/bg_md3_switch_track" />
             </LinearLayout>
 
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="12dp"
+                android:layout_marginLeft="70dp"
+                android:layout_marginRight="16dp"
+                android:alpha="0.55"
                 android:background="@color/md3_outline_variant" />
 
-            <!-- 超时时间 -->
+            <!-- 对讲超时 -->
             <LinearLayout
+                android:id="@+id/rowTimeout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp">
 
-                <TextView
+                <FrameLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_md3_chip_tertiary">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_md3_timer"
+                        app:tint="@color/md3_on_tertiary_container" />
+                </FrameLayout>
+
+                <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginLeft="14dp"
                     android:layout_weight="1"
-                    android:text="超时时间"
-                    android:textColor="@color/md3_on_surface"
-                    android:textSize="16sp" />
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_talkback_timeout"
+                        android:textColor="@color/md3_on_surface"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/settings_talkback_timeout_sub"
+                        android:textColor="@color/md3_on_surface_variant"
+                        android:textSize="13sp" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/tvTimeout"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="30 秒"
+                    android:text="50"
                     android:textColor="@color/md3_on_surface_variant"
                     android:textSize="14sp" />
+
+                <ImageView
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_marginLeft="4dp"
+                    android:src="@drawable/ic_md3_chevron_right"
+                    app:tint="@color/md3_on_surface_variant" />
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 通知设置卡片 -->
+        <!-- 分组：通知 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="28dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="8dp"
+            android:text="@string/settings_section_notification"
+            android:textColor="@color/md3_on_surface_variant"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginLeft="16dp"
             android:layout_marginRight="16dp"
-            android:layout_marginTop="8dp"
             android:background="@drawable/bg_md3_card"
             android:orientation="vertical"
-            android:padding="16dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="通知设置"
-                android:textColor="@color/md3_primary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+            android:paddingBottom="4dp"
+            android:paddingTop="4dp">
 
             <!-- 召唤提醒 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp">
 
-                <TextView
+                <FrameLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_md3_chip_primary">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_md3_notifications"
+                        app:tint="@color/md3_on_primary_container" />
+                </FrameLayout>
+
+                <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginLeft="14dp"
                     android:layout_weight="1"
-                    android:text="召唤提醒"
-                    android:textColor="@color/md3_on_surface"
-                    android:textSize="16sp" />
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_call_reminder"
+                        android:textColor="@color/md3_on_surface"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/settings_call_reminder_sub"
+                        android:textColor="@color/md3_on_surface_variant"
+                        android:textSize="13sp" />
+                </LinearLayout>
 
                 <androidx.appcompat.widget.SwitchCompat
                     android:id="@+id/switchCallReminder"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:thumb="@drawable/bg_md3_switch_thumb"
+                    app:showText="false"
+                    app:track="@drawable/bg_md3_switch_track" />
             </LinearLayout>
 
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="12dp"
+                android:layout_marginLeft="70dp"
+                android:layout_marginRight="16dp"
+                android:alpha="0.55"
                 android:background="@color/md3_outline_variant" />
 
             <!-- 振动反馈 -->
@@ -206,56 +431,111 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp">
 
-                <TextView
+                <FrameLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_md3_chip_secondary">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_md3_vibration"
+                        app:tint="@color/md3_on_secondary_container" />
+                </FrameLayout>
+
+                <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginLeft="14dp"
                     android:layout_weight="1"
-                    android:text="振动反馈"
-                    android:textColor="@color/md3_on_surface"
-                    android:textSize="16sp" />
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_vibration"
+                        android:textColor="@color/md3_on_surface"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/settings_vibration_sub"
+                        android:textColor="@color/md3_on_surface_variant"
+                        android:textSize="13sp" />
+                </LinearLayout>
 
                 <androidx.appcompat.widget.SwitchCompat
                     android:id="@+id/switchVibration"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:thumb="@drawable/bg_md3_switch_thumb"
+                    app:showText="false"
+                    app:track="@drawable/bg_md3_switch_track" />
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 关于卡片 -->
+        <!-- 分组：关于 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="28dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="8dp"
+            android:text="@string/settings_section_about"
+            android:textColor="@color/md3_on_surface_variant"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginLeft="16dp"
             android:layout_marginRight="16dp"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="16dp"
             android:background="@drawable/bg_md3_card"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:paddingBottom="4dp"
+            android:paddingTop="4dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="关于"
-                android:textColor="@color/md3_primary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <!-- 版本号 -->
+            <!-- 版本 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp">
+
+                <FrameLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_md3_chip_primary">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_md3_info"
+                        app:tint="@color/md3_on_primary_container" />
+                </FrameLayout>
 
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginLeft="14dp"
                     android:layout_weight="1"
-                    android:text="版本号"
+                    android:text="@string/settings_version"
                     android:textColor="@color/md3_on_surface"
                     android:textSize="16sp" />
 
@@ -271,8 +551,9 @@
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="12dp"
+                android:layout_marginLeft="70dp"
+                android:layout_marginRight="16dp"
+                android:alpha="0.55"
                 android:background="@color/md3_outline_variant" />
 
             <!-- 作者 -->
@@ -280,13 +561,31 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp">
+
+                <FrameLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_md3_chip_secondary">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_md3_person"
+                        app:tint="@color/md3_on_secondary_container" />
+                </FrameLayout>
 
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginLeft="14dp"
                     android:layout_weight="1"
-                    android:text="作者"
+                    android:text="@string/settings_author"
                     android:textColor="@color/md3_on_surface"
                     android:textSize="16sp" />
 
@@ -302,22 +601,44 @@
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="12dp"
+                android:layout_marginLeft="70dp"
+                android:layout_marginRight="16dp"
+                android:alpha="0.55"
                 android:background="@color/md3_outline_variant" />
 
             <!-- 开源地址 -->
             <LinearLayout
+                android:id="@+id/rowOpenSource"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp">
+
+                <FrameLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_md3_chip_tertiary">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_md3_link"
+                        app:tint="@color/md3_on_tertiary_container" />
+                </FrameLayout>
 
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginLeft="14dp"
                     android:layout_weight="1"
-                    android:text="开源地址"
+                    android:text="@string/settings_open_source"
                     android:textColor="@color/md3_on_surface"
                     android:textSize="16sp" />
 
@@ -325,41 +646,74 @@
                     android:id="@+id/tvOpenSourceUrl"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="GitHub"
+                    android:text="@string/settings_open_source_value"
                     android:textColor="@color/md3_primary"
                     android:textSize="14sp" />
+
+                <ImageView
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_marginLeft="4dp"
+                    android:src="@drawable/ic_md3_chevron_right"
+                    app:tint="@color/md3_on_surface_variant" />
             </LinearLayout>
 
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="12dp"
+                android:layout_marginLeft="70dp"
+                android:layout_marginRight="16dp"
+                android:alpha="0.55"
                 android:background="@color/md3_outline_variant" />
 
             <!-- 二次开发来源 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="二次开发来源"
-                    android:textColor="@color/md3_on_surface"
-                    android:textSize="16sp" />
+                <FrameLayout
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_md3_chip_primary">
 
-                <TextView
-                    android:id="@+id/tvSourceInfo"
-                    android:layout_width="wrap_content"
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_md3_code"
+                        app:tint="@color/md3_on_primary_container" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="基于秋元的纸条项目二次开发"
-                    android:textColor="@color/md3_on_surface_variant"
-                    android:textSize="14sp" />
+                    android:layout_marginLeft="14dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_source_note"
+                        android:textColor="@color/md3_on_surface"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:id="@+id/tvSourceInfo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/settings_source_note_sub"
+                        android:textColor="@color/md3_on_surface_variant"
+                        android:textSize="13sp" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
-
     </LinearLayout>
 </ScrollView>
