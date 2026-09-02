@@ -39,6 +39,7 @@ public class SettingsFragment extends Fragment {
     private TextView tvSourceInfo;
     private TextView tvTimeout;
     private TextView tvConnectionStatus;
+    private TextView tvThemeValue;
     private View dotStatus;
     private SwitchCompat switchAutoReconnect;
     private SwitchCompat switchCallReminder;
@@ -57,6 +58,7 @@ public class SettingsFragment extends Fragment {
         tvSourceInfo = view.findViewById(R.id.tvSourceInfo);
         tvTimeout = view.findViewById(R.id.tvTimeout);
         tvConnectionStatus = view.findViewById(R.id.tvConnectionStatus);
+        tvThemeValue = view.findViewById(R.id.tvThemeValue);
         dotStatus = view.findViewById(R.id.dotStatus);
         switchAutoReconnect = view.findViewById(R.id.switchAutoReconnect);
         switchCallReminder = view.findViewById(R.id.switchCallReminder);
@@ -68,6 +70,7 @@ public class SettingsFragment extends Fragment {
         setupAuthor();
         setupTimeoutRow(view);
         setupOpenSourceRow(view);
+        setupThemeRow(view);
         setupSwitches();
 
         return view;
@@ -198,6 +201,63 @@ public class SettingsFragment extends Fragment {
     public static int getTalkbackTimeoutSeconds(Context context) {
         return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
                 .getInt(KEY_TALKBACK_TIMEOUT, DEFAULT_TALKBACK_TIMEOUT_SECONDS);
+    }
+
+    // ==================== 主题配色 ====================
+
+    private static final String[] PALETTE_IDS = {
+            PaletteHelper.PALETTE_INDIGO, PaletteHelper.PALETTE_GREEN_WHITE,
+            PaletteHelper.PALETTE_TEAL, PaletteHelper.PALETTE_ROSE,
+            PaletteHelper.PALETTE_AMBER, PaletteHelper.PALETTE_MONO
+    };
+    private static final int[] PALETTE_LABEL_RES = {
+            R.string.palette_indigo, R.string.palette_green_white,
+            R.string.palette_teal, R.string.palette_rose,
+            R.string.palette_amber, R.string.palette_mono
+    };
+
+    private void setupThemeRow(View view) {
+        View row = view.findViewById(R.id.rowTheme);
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showThemeDialog();
+            }
+        });
+        refreshThemeValue();
+    }
+
+    private void refreshThemeValue() {
+        if (getActivity() == null) return;
+        tvThemeValue.setText(paletteLabel(PaletteHelper.getPalette(getActivity())));
+    }
+
+    private String paletteLabel(String paletteId) {
+        for (int i = 0; i < PALETTE_IDS.length; i++) {
+            if (PALETTE_IDS[i].equals(paletteId)) return getString(PALETTE_LABEL_RES[i]);
+        }
+        return getString(PALETTE_LABEL_RES[0]);
+    }
+
+    private void showThemeDialog() {
+        if (getActivity() == null) return;
+        String[] labels = new String[PALETTE_IDS.length];
+        int checked = 0;
+        String current = PaletteHelper.getPalette(getActivity());
+        for (int i = 0; i < PALETTE_IDS.length; i++) {
+            labels[i] = getString(PALETTE_LABEL_RES[i]);
+            if (PALETTE_IDS[i].equals(current)) checked = i;
+        }
+        new AlertDialog.Builder(getActivity(), R.style.CustomDialogTheme)
+                .setTitle(R.string.settings_theme)
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    PaletteHelper.savePalette(getActivity(), PALETTE_IDS[which]);
+                    dialog.dismiss();
+                    // 主题在 Activity 创建时应用，切换后重建整个界面
+                    getActivity().recreate();
+                })
+                .setNegativeButton(R.string.settings_cancel, null)
+                .show();
     }
 
     private void setupOpenSourceRow(View view) {

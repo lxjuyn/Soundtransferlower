@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MD3 主题属性：由 6 套 Theme.Md3.* 主题映射到对应调色板色值资源 -->
+<resources>
+    <attr name="md3Primary" format="color" />
+    <attr name="md3OnPrimary" format="color" />
+    <attr name="md3PrimaryContainer" format="color" />
+    <attr name="md3OnPrimaryContainer" format="color" />
+    <attr name="md3Secondary" format="color" />
+    <attr name="md3OnSecondary" format="color" />
+    <attr name="md3SecondaryContainer" format="color" />
+    <attr name="md3OnSecondaryContainer" format="color" />
+    <attr name="md3Tertiary" format="color" />
+    <attr name="md3OnTertiary" format="color" />
+    <attr name="md3TertiaryContainer" format="color" />
+    <attr name="md3OnTertiaryContainer" format="color" />
+    <attr name="md3Surface" format="color" />
+    <attr name="md3OnSurface" format="color" />
+    <attr name="md3OnSurfaceVariant" format="color" />
+    <attr name="md3SurfaceContainerLow" format="color" />
+    <attr name="md3SurfaceContainer" format="color" />
+    <attr name="md3SurfaceContainerHigh" format="color" />
+    <attr name="md3SurfaceContainerHighest" format="color" />
+    <attr name="md3Outline" format="color" />
+    <attr name="md3OutlineVariant" format="color" />
+    <attr name="md3Error" format="color" />
+    <attr name="md3OnError" format="color" />
+    <attr name="md3HeroStart" format="color" />
+    <attr name="md3HeroEnd" format="color" />
+    <attr name="md3DotOn" format="color" />
+    <attr name="md3DotOff" format="color" />
+</resources>

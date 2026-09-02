@@ -162,6 +162,8 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // 必须在 super.onCreate 前应用用户选择的配色主题（PaletteHelper 读 SharedPreferences）
+        setTheme(PaletteHelper.getThemeResId(this));
         AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main_new);

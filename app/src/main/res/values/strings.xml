@@ -50,4 +50,14 @@
     <string name="settings_open_source_value">GitHub</string>
     <string name="settings_source_note">二次开发来源</string>
     <string name="settings_source_note_sub">基于秋元的纸条项目二次开发\n原始仓库：gitee.com/yonstus/Soundtransferlower</string>
+    <string name="settings_section_appearance">外观</string>
+    <string name="settings_theme">主题配色</string>
+    <string name="settings_theme_sub">选择喜欢的配色方案</string>
+    <string name="settings_theme_changed">已切换配色</string>
+    <string name="palette_indigo">靛蓝</string>
+    <string name="palette_green_white">绿白</string>
+    <string name="palette_teal">青碧</string>
+    <string name="palette_rose">绯樱</string>
+    <string name="palette_amber">琥珀</string>
+    <string name="palette_mono">石墨</string>
 </resources>

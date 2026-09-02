@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!-- 底部导航按钮样式 -->
     <style name="BottomNavButton" parent="Widget.AppCompat.Button.Borderless">
         <item name="android:layout_width">0dp</item>
@@ -10,12 +10,222 @@
         <item name="android:drawablePadding">4dp</item>
         <item name="android:minHeight">48dp</item>
     </style>
-    <!-- 自定义对话框主题 -->
+    <!-- 自定义对话框主题（P4 将移除，改为随 Activity 主题） -->
     <style name="CustomDialogTheme" parent="Theme.AppCompat.Dialog">
         <item name="android:windowBackground">@color/colorPrimary</item>
         <item name="android:textColor">@android:color/white</item>
         <item name="android:textColorPrimary">@android:color/white</item>
         <item name="colorAccent">@android:color/white</item>
+    </style>
+
+    <!-- ==================== 6 套 MD3 配色主题 ====================
+         colorPrimary/colorPrimaryDark/colorAccent 供状态栏与默认控件使用；
+         md3* 自定义属性供布局 ?attr 与 Md3Ui 程序化取色使用。
+         暗色由 values-night/colors.xml 同名色值自动适配。 -->
+    <style name="Theme.Md3" parent="Theme.AppCompat.DayNight.NoActionBar" />
+
+    <style name="Theme.Md3.Indigo">
+        <item name="colorPrimary">@color/md3_primary</item>
+        <item name="colorPrimaryDark">@color/md3_hero_end</item>
+        <item name="colorAccent">@color/md3_primary</item>
+        <item name="android:statusBarColor" tools:targetApi="21">?attr/colorPrimaryDark</item>
+        <item name="md3Primary">@color/md3_primary</item>
+        <item name="md3OnPrimary">@color/md3_on_primary</item>
+        <item name="md3PrimaryContainer">@color/md3_primary_container</item>
+        <item name="md3OnPrimaryContainer">@color/md3_on_primary_container</item>
+        <item name="md3Secondary">@color/md3_secondary</item>
+        <item name="md3OnSecondary">@color/md3_on_secondary</item>
+        <item name="md3SecondaryContainer">@color/md3_secondary_container</item>
+        <item name="md3OnSecondaryContainer">@color/md3_on_secondary_container</item>
+        <item name="md3Tertiary">@color/md3_tertiary</item>
+        <item name="md3OnTertiary">@color/md3_on_tertiary</item>
+        <item name="md3TertiaryContainer">@color/md3_tertiary_container</item>
+        <item name="md3OnTertiaryContainer">@color/md3_on_tertiary_container</item>
+        <item name="md3Surface">@color/md3_surface</item>
+        <item name="md3OnSurface">@color/md3_on_surface</item>
+        <item name="md3OnSurfaceVariant">@color/md3_on_surface_variant</item>
+        <item name="md3SurfaceContainerLow">@color/md3_surface_container_low</item>
+        <item name="md3SurfaceContainer">@color/md3_surface_container</item>
+        <item name="md3SurfaceContainerHigh">@color/md3_surface_container_high</item>
+        <item name="md3SurfaceContainerHighest">@color/md3_surface_container_highest</item>
+        <item name="md3Outline">@color/md3_outline</item>
+        <item name="md3OutlineVariant">@color/md3_outline_variant</item>
+        <item name="md3Error">@color/md3_error</item>
+        <item name="md3OnError">@color/md3_on_error</item>
+        <item name="md3HeroStart">@color/md3_hero_start</item>
+        <item name="md3HeroEnd">@color/md3_hero_end</item>
+        <item name="md3DotOn">@color/md3_dot_on</item>
+        <item name="md3DotOff">@color/md3_dot_off</item>
+    </style>
+
+    <style name="Theme.Md3.GreenWhite">
+        <item name="colorPrimary">@color/md3g_primary</item>
+        <item name="colorPrimaryDark">@color/md3g_hero_end</item>
+        <item name="colorAccent">@color/md3g_primary</item>
+        <item name="android:statusBarColor" tools:targetApi="21">?attr/colorPrimaryDark</item>
+        <item name="md3Primary">@color/md3g_primary</item>
+        <item name="md3OnPrimary">@color/md3g_on_primary</item>
+        <item name="md3PrimaryContainer">@color/md3g_primary_container</item>
+        <item name="md3OnPrimaryContainer">@color/md3g_on_primary_container</item>
+        <item name="md3Secondary">@color/md3g_secondary</item>
+        <item name="md3OnSecondary">@color/md3g_on_secondary</item>
+        <item name="md3SecondaryContainer">@color/md3g_secondary_container</item>
+        <item name="md3OnSecondaryContainer">@color/md3g_on_secondary_container</item>
+        <item name="md3Tertiary">@color/md3g_tertiary</item>
+        <item name="md3OnTertiary">@color/md3g_on_tertiary</item>
+        <item name="md3TertiaryContainer">@color/md3g_tertiary_container</item>
+        <item name="md3OnTertiaryContainer">@color/md3g_on_tertiary_container</item>
+        <item name="md3Surface">@color/md3g_surface</item>
+        <item name="md3OnSurface">@color/md3g_on_surface</item>
+        <item name="md3OnSurfaceVariant">@color/md3g_on_surface_variant</item>
+        <item name="md3SurfaceContainerLow">@color/md3g_surface_container_low</item>
+        <item name="md3SurfaceContainer">@color/md3g_surface_container</item>
+        <item name="md3SurfaceContainerHigh">@color/md3g_surface_container_high</item>
+        <item name="md3SurfaceContainerHighest">@color/md3g_surface_container_highest</item>
+        <item name="md3Outline">@color/md3g_outline</item>
+        <item name="md3OutlineVariant">@color/md3g_outline_variant</item>
+        <item name="md3Error">@color/md3g_error</item>
+        <item name="md3OnError">@color/md3g_on_error</item>
+        <item name="md3HeroStart">@color/md3g_hero_start</item>
+        <item name="md3HeroEnd">@color/md3g_hero_end</item>
+        <item name="md3DotOn">@color/md3g_dot_on</item>
+        <item name="md3DotOff">@color/md3g_dot_off</item>
+    </style>
+
+    <style name="Theme.Md3.Teal">
+        <item name="colorPrimary">@color/md3t_primary</item>
+        <item name="colorPrimaryDark">@color/md3t_hero_end</item>
+        <item name="colorAccent">@color/md3t_primary</item>
+        <item name="android:statusBarColor" tools:targetApi="21">?attr/colorPrimaryDark</item>
+        <item name="md3Primary">@color/md3t_primary</item>
+        <item name="md3OnPrimary">@color/md3t_on_primary</item>
+        <item name="md3PrimaryContainer">@color/md3t_primary_container</item>
+        <item name="md3OnPrimaryContainer">@color/md3t_on_primary_container</item>
+        <item name="md3Secondary">@color/md3t_secondary</item>
+        <item name="md3OnSecondary">@color/md3t_on_secondary</item>
+        <item name="md3SecondaryContainer">@color/md3t_secondary_container</item>
+        <item name="md3OnSecondaryContainer">@color/md3t_on_secondary_container</item>
+        <item name="md3Tertiary">@color/md3t_tertiary</item>
+        <item name="md3OnTertiary">@color/md3t_on_tertiary</item>
+        <item name="md3TertiaryContainer">@color/md3t_tertiary_container</item>
+        <item name="md3OnTertiaryContainer">@color/md3t_on_tertiary_container</item>
+        <item name="md3Surface">@color/md3t_surface</item>
+        <item name="md3OnSurface">@color/md3t_on_surface</item>
+        <item name="md3OnSurfaceVariant">@color/md3t_on_surface_variant</item>
+        <item name="md3SurfaceContainerLow">@color/md3t_surface_container_low</item>
+        <item name="md3SurfaceContainer">@color/md3t_surface_container</item>
+        <item name="md3SurfaceContainerHigh">@color/md3t_surface_container_high</item>
+        <item name="md3SurfaceContainerHighest">@color/md3t_surface_container_highest</item>
+        <item name="md3Outline">@color/md3t_outline</item>
+        <item name="md3OutlineVariant">@color/md3t_outline_variant</item>
+        <item name="md3Error">@color/md3t_error</item>
+        <item name="md3OnError">@color/md3t_on_error</item>
+        <item name="md3HeroStart">@color/md3t_hero_start</item>
+        <item name="md3HeroEnd">@color/md3t_hero_end</item>
+        <item name="md3DotOn">@color/md3t_dot_on</item>
+        <item name="md3DotOff">@color/md3t_dot_off</item>
+    </style>
+
+    <style name="Theme.Md3.Rose">
+        <item name="colorPrimary">@color/md3r_primary</item>
+        <item name="colorPrimaryDark">@color/md3r_hero_end</item>
+        <item name="colorAccent">@color/md3r_primary</item>
+        <item name="android:statusBarColor" tools:targetApi="21">?attr/colorPrimaryDark</item>
+        <item name="md3Primary">@color/md3r_primary</item>
+        <item name="md3OnPrimary">@color/md3r_on_primary</item>
+        <item name="md3PrimaryContainer">@color/md3r_primary_container</item>
+        <item name="md3OnPrimaryContainer">@color/md3r_on_primary_container</item>
+        <item name="md3Secondary">@color/md3r_secondary</item>
+        <item name="md3OnSecondary">@color/md3r_on_secondary</item>
+        <item name="md3SecondaryContainer">@color/md3r_secondary_container</item>
+        <item name="md3OnSecondaryContainer">@color/md3r_on_secondary_container</item>
+        <item name="md3Tertiary">@color/md3r_tertiary</item>
+        <item name="md3OnTertiary">@color/md3r_on_tertiary</item>
+        <item name="md3TertiaryContainer">@color/md3r_tertiary_container</item>
+        <item name="md3OnTertiaryContainer">@color/md3r_on_tertiary_container</item>
+        <item name="md3Surface">@color/md3r_surface</item>
+        <item name="md3OnSurface">@color/md3r_on_surface</item>
+        <item name="md3OnSurfaceVariant">@color/md3r_on_surface_variant</item>
+        <item name="md3SurfaceContainerLow">@color/md3r_surface_container_low</item>
+        <item name="md3SurfaceContainer">@color/md3r_surface_container</item>
+        <item name="md3SurfaceContainerHigh">@color/md3r_surface_container_high</item>
+        <item name="md3SurfaceContainerHighest">@color/md3r_surface_container_highest</item>
+        <item name="md3Outline">@color/md3r_outline</item>
+        <item name="md3OutlineVariant">@color/md3r_outline_variant</item>
+        <item name="md3Error">@color/md3r_error</item>
+        <item name="md3OnError">@color/md3r_on_error</item>
+        <item name="md3HeroStart">@color/md3r_hero_start</item>
+        <item name="md3HeroEnd">@color/md3r_hero_end</item>
+        <item name="md3DotOn">@color/md3r_dot_on</item>
+        <item name="md3DotOff">@color/md3r_dot_off</item>
+    </style>
+
+    <style name="Theme.Md3.Amber">
+        <item name="colorPrimary">@color/md3a_primary</item>
+        <item name="colorPrimaryDark">@color/md3a_hero_end</item>
+        <item name="colorAccent">@color/md3a_primary</item>
+        <item name="android:statusBarColor" tools:targetApi="21">?attr/colorPrimaryDark</item>
+        <item name="md3Primary">@color/md3a_primary</item>
+        <item name="md3OnPrimary">@color/md3a_on_primary</item>
+        <item name="md3PrimaryContainer">@color/md3a_primary_container</item>
+        <item name="md3OnPrimaryContainer">@color/md3a_on_primary_container</item>
+        <item name="md3Secondary">@color/md3a_secondary</item>
+        <item name="md3OnSecondary">@color/md3a_on_secondary</item>
+        <item name="md3SecondaryContainer">@color/md3a_secondary_container</item>
+        <item name="md3OnSecondaryContainer">@color/md3a_on_secondary_container</item>
+        <item name="md3Tertiary">@color/md3a_tertiary</item>
+        <item name="md3OnTertiary">@color/md3a_on_tertiary</item>
+        <item name="md3TertiaryContainer">@color/md3a_tertiary_container</item>
+        <item name="md3OnTertiaryContainer">@color/md3a_on_tertiary_container</item>
+        <item name="md3Surface">@color/md3a_surface</item>
+        <item name="md3OnSurface">@color/md3a_on_surface</item>
+        <item name="md3OnSurfaceVariant">@color/md3a_on_surface_variant</item>
+        <item name="md3SurfaceContainerLow">@color/md3a_surface_container_low</item>
+        <item name="md3SurfaceContainer">@color/md3a_surface_container</item>
+        <item name="md3SurfaceContainerHigh">@color/md3a_surface_container_high</item>
+        <item name="md3SurfaceContainerHighest">@color/md3a_surface_container_highest</item>
+        <item name="md3Outline">@color/md3a_outline</item>
+        <item name="md3OutlineVariant">@color/md3a_outline_variant</item>
+        <item name="md3Error">@color/md3a_error</item>
+        <item name="md3OnError">@color/md3a_on_error</item>
+        <item name="md3HeroStart">@color/md3a_hero_start</item>
+        <item name="md3HeroEnd">@color/md3a_hero_end</item>
+        <item name="md3DotOn">@color/md3a_dot_on</item>
+        <item name="md3DotOff">@color/md3a_dot_off</item>
+    </style>
+
+    <style name="Theme.Md3.Mono">
+        <item name="colorPrimary">@color/md3m_primary</item>
+        <item name="colorPrimaryDark">@color/md3m_hero_end</item>
+        <item name="colorAccent">@color/md3m_primary</item>
+        <item name="android:statusBarColor" tools:targetApi="21">?attr/colorPrimaryDark</item>
+        <item name="md3Primary">@color/md3m_primary</item>
+        <item name="md3OnPrimary">@color/md3m_on_primary</item>
+        <item name="md3PrimaryContainer">@color/md3m_primary_container</item>
+        <item name="md3OnPrimaryContainer">@color/md3m_on_primary_container</item>
+        <item name="md3Secondary">@color/md3m_secondary</item>
+        <item name="md3OnSecondary">@color/md3m_on_secondary</item>
+        <item name="md3SecondaryContainer">@color/md3m_secondary_container</item>
+        <item name="md3OnSecondaryContainer">@color/md3m_on_secondary_container</item>
+        <item name="md3Tertiary">@color/md3m_tertiary</item>
+        <item name="md3OnTertiary">@color/md3m_on_tertiary</item>
+        <item name="md3TertiaryContainer">@color/md3m_tertiary_container</item>
+        <item name="md3OnTertiaryContainer">@color/md3m_on_tertiary_container</item>
+        <item name="md3Surface">@color/md3m_surface</item>
+        <item name="md3OnSurface">@color/md3m_on_surface</item>
+        <item name="md3OnSurfaceVariant">@color/md3m_on_surface_variant</item>
+        <item name="md3SurfaceContainerLow">@color/md3m_surface_container_low</item>
+        <item name="md3SurfaceContainer">@color/md3m_surface_container</item>
+        <item name="md3SurfaceContainerHigh">@color/md3m_surface_container_high</item>
+        <item name="md3SurfaceContainerHighest">@color/md3m_surface_container_highest</item>
+        <item name="md3Outline">@color/md3m_outline</item>
+        <item name="md3OutlineVariant">@color/md3m_outline_variant</item>
+        <item name="md3Error">@color/md3m_error</item>
+        <item name="md3OnError">@color/md3m_on_error</item>
+        <item name="md3HeroStart">@color/md3m_hero_start</item>
+        <item name="md3HeroEnd">@color/md3m_hero_end</item>
+        <item name="md3DotOn">@color/md3m_dot_on</item>
+        <item name="md3DotOff">@color/md3m_dot_off</item>
     </style>
 
     <!-- MD3 Typography -->
@@ -24,7 +234,7 @@
         <item name="android:textSize">57sp</item>
         <item name="android:lineHeight">64sp</item>
         <item name="android:fontFamily">sans-serif</item>
-        <item name="android:textColor">@color/md3_on_surface</item>
+        <item name="android:textColor">?attr/md3OnSurface</item>
     </style>
     <style name="MD3.DisplayMedium">
         <item name="android:textSize">45sp</item>
@@ -53,12 +263,12 @@
     <style name="MD3.TitleMedium">
         <item name="android:textSize">16sp</item>
         <item name="android:lineHeight">24sp</item>
-        <item name="android:textColor">@color/md3_on_surface</item>
+        <item name="android:textColor">?attr/md3OnSurface</item>
     </style>
     <style name="MD3.TitleSmall">
         <item name="android:textSize">14sp</item>
         <item name="android:lineHeight">20sp</item>
-        <item name="android:textColor">@color/md3_on_surface</item>
+        <item name="android:textColor">?attr/md3OnSurface</item>
     </style>
     <style name="MD3.BodyLarge">
         <item name="android:textSize">16sp</item>
@@ -75,7 +285,7 @@
     <style name="MD3.LabelLarge">
         <item name="android:textSize">14sp</item>
         <item name="android:lineHeight">20sp</item>
-        <item name="android:textColor">@color/md3_on_surface</item>
+        <item name="android:textColor">?attr/md3OnSurface</item>
     </style>
     <style name="MD3.LabelMedium">
         <item name="android:textSize">12sp</item>
