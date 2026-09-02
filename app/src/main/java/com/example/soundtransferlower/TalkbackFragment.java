@@ -45,7 +45,8 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
     private static final int REQUEST_TALK_PERMISSIONS = 2;
     private static final long RECEIVE_TIMEOUT = 800;
     private boolean isLoading = true;
-    private static final long INACTIVITY_THRESHOLD_DISCONNECT = 50000;
+    // 对讲无活动断开阈值：从设置页读取（默认 50 秒），单位毫秒
+    private long inactivityThresholdDisconnect = 50000;
     private long lastActivityTime = 0;
     private Runnable inactivityCheckRunnable;
 
@@ -156,6 +157,7 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         initBluetooth();
         initAudio();
         setupListeners();
+        inactivityThresholdDisconnect = SettingsFragment.getTalkbackTimeoutSeconds(getActivity()) * 1000L;
 
         Intent serviceIntent = new Intent(getActivity(), BluetoothService.class);
         getActivity().bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE);
@@ -591,10 +593,11 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         if (!isConnectionActive) return;
         long currentTime = System.currentTimeMillis();
         long inactiveDuration = currentTime - lastActivityTime;
-        if (inactiveDuration >= INACTIVITY_THRESHOLD_DISCONNECT) {
-            Log.d(TAG, "50秒无活动，断开连接");
+        if (inactiveDuration >= inactivityThresholdDisconnect) {
+            Log.d(TAG, "对讲无活动达到阈值，断开连接");
             disconnect();
-            handler.post(() -> Toast.makeText(getActivity(), "50秒无活动，连接已断开", Toast.LENGTH_LONG).show());
+            handler.post(() -> Toast.makeText(getActivity(),
+                    getString(R.string.settings_talkback_timeout_sub) + "，连接已断开", Toast.LENGTH_LONG).show());
         }
     }
 
