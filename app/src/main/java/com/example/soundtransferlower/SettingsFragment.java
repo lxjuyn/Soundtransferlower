@@ -81,7 +81,7 @@ public class SettingsFragment extends Fragment {
     }
 
     private void setupBackButton(View view) {
-        TextView btnBack = view.findViewById(R.id.btnSettingsBack);
+        View btnBack = view.findViewById(R.id.btnSettingsBack);
         btnBack.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {

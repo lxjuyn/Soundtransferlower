@@ -30,8 +30,7 @@
                 android:background="@drawable/bg_md3_back_btn"
                 android:contentDescription="@string/back_button_desc"
                 android:padding="9dp"
-                android:src="@drawable/ic_md3_arrow_back"
-                app:tint="@color/md3_on_surface" />
+                android:src="@drawable/ic_md3_arrow_back" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -157,8 +156,7 @@
                         android:layout_width="22dp"
                         android:layout_height="22dp"
                         android:layout_gravity="center"
-                        android:src="@drawable/ic_md3_bluetooth"
-                        app:tint="@color/md3_on_primary_container" />
+                        android:src="@drawable/ic_md3_bluetooth" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -227,8 +225,7 @@
                         android:layout_width="22dp"
                         android:layout_height="22dp"
                         android:layout_gravity="center"
-                        android:src="@drawable/ic_md3_refresh"
-                        app:tint="@color/md3_on_secondary_container" />
+                        android:src="@drawable/ic_md3_refresh" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -295,8 +292,7 @@
                         android:layout_width="22dp"
                         android:layout_height="22dp"
                         android:layout_gravity="center"
-                        android:src="@drawable/ic_md3_timer"
-                        app:tint="@color/md3_on_tertiary_container" />
+                        android:src="@drawable/ic_md3_timer" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -334,8 +330,7 @@
                     android:layout_width="18dp"
                     android:layout_height="18dp"
                     android:layout_marginLeft="4dp"
-                    android:src="@drawable/ic_md3_chevron_right"
-                    app:tint="@color/md3_on_surface_variant" />
+                    android:src="@drawable/ic_md3_chevron_right" />
             </LinearLayout>
         </LinearLayout>
 
@@ -381,8 +376,7 @@
                         android:layout_width="22dp"
                         android:layout_height="22dp"
                         android:layout_gravity="center"
-                        android:src="@drawable/ic_md3_notifications"
-                        app:tint="@color/md3_on_primary_container" />
+                        android:src="@drawable/ic_md3_notifications" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -446,8 +440,7 @@
                         android:layout_width="22dp"
                         android:layout_height="22dp"
                         android:layout_gravity="center"
-                        android:src="@drawable/ic_md3_vibration"
-                        app:tint="@color/md3_on_secondary_container" />
+                        android:src="@drawable/ic_md3_vibration" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -526,8 +519,7 @@
                         android:layout_width="22dp"
                         android:layout_height="22dp"
                         android:layout_gravity="center"
-                        android:src="@drawable/ic_md3_info"
-                        app:tint="@color/md3_on_primary_container" />
+                        android:src="@drawable/ic_md3_info" />
                 </FrameLayout>
 
                 <TextView
@@ -576,8 +568,7 @@
                         android:layout_width="22dp"
                         android:layout_height="22dp"
                         android:layout_gravity="center"
-                        android:src="@drawable/ic_md3_person"
-                        app:tint="@color/md3_on_secondary_container" />
+                        android:src="@drawable/ic_md3_person" />
                 </FrameLayout>
 
                 <TextView
@@ -629,8 +620,7 @@
                         android:layout_width="22dp"
                         android:layout_height="22dp"
                         android:layout_gravity="center"
-                        android:src="@drawable/ic_md3_link"
-                        app:tint="@color/md3_on_tertiary_container" />
+                        android:src="@drawable/ic_md3_link" />
                 </FrameLayout>
 
                 <TextView
@@ -654,8 +644,7 @@
                     android:layout_width="18dp"
                     android:layout_height="18dp"
                     android:layout_marginLeft="4dp"
-                    android:src="@drawable/ic_md3_chevron_right"
-                    app:tint="@color/md3_on_surface_variant" />
+                    android:src="@drawable/ic_md3_chevron_right" />
             </LinearLayout>
 
             <View
@@ -686,8 +675,7 @@
                         android:layout_width="22dp"
                         android:layout_height="22dp"
                         android:layout_gravity="center"
-                        android:src="@drawable/ic_md3_code"
-                        app:tint="@color/md3_on_primary_container" />
+                        android:src="@drawable/ic_md3_code" />
                 </FrameLayout>
 
                 <LinearLayout
