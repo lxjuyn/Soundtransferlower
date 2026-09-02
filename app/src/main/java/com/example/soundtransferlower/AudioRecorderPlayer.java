@@ -101,7 +101,7 @@ public class AudioRecorderPlayer {
             // 优化：提升比特率到24kbps，支持宽带语音
             opusEncoder.setBitrate(24000); // 24 kbps for wideband speech
             // 优化：启用FEC（前向纠错），提升抗丢包能力
-            opusEncoder.setInBandFEC(true);
+            opusEncoder.setUseInbandFEC(true);
             // 优化：设置复杂度为5，平衡CPU使用和编码质量
             opusEncoder.setComplexity(5);
             opusDecoder = new OpusDecoder(SAMPLE_RATE, 1);
