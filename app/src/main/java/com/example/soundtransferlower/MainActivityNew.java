@@ -17,14 +17,17 @@ import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.res.AssetFileDescriptor;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
+import android.provider.MediaStore;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentActivity;
 import android.support.v4.app.FragmentManager;
-import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatDelegate;
 import android.support.v7.widget.PopupMenu;
 import android.view.LayoutInflater;
@@ -42,8 +45,10 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
@@ -59,7 +64,19 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
     private static final String TAG = "MainActivityNew";
     private static final long CALL_TIMEOUT_MS = 10000;
     private static final long RECONNECT_DELAY_MS = 2000;
-    private static final int DISCOVERABLE_DURATION = 300; // 5分钟
+    private static final int DISCOVERABLE_DURATION = 300;
+    private static final long CONNECT_TIMEOUT_MS = 15000;
+    private static final int MAX_CONNECT_RETRIES = 3;
+    private static final long CONNECT_RETRY_DELAY = 5000;
+
+    // ---------- 扫描前自身可见性检查 ----------
+    private long lastDiscoverableRequestTime = 0;
+    private static final long DISCOVERABLE_REQUEST_INTERVAL = 300 * 1000; // 300秒
+
+    // ---------- 外部文件分享（实例变量） ----------
+    private String pendingShareFile = null;
+    private String pendingShareFileName = null;
+    private long pendingShareFileSize = 0;
 
     // ---------- UI ----------
     private TextView mainStatus;
@@ -102,6 +119,12 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
     private boolean pendingDiscoverableRequest = false;
     private Handler discoverableHandler = new Handler();
     private Runnable discoverableRunnable;
+
+    // ---------- 待发送消息连接管理 ----------
+    private PendingMessage pendingSendAfterConnect = null;
+    private int pendingConnectRetryCount = 0;
+    private Handler connectTimeoutHandler = new Handler();
+    private Runnable connectTimeoutRunnable;
 
     // ---------- Handler ----------
     private final Handler handler = new Handler();
@@ -150,7 +173,6 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main_new);
 
-        // 初始化日志开关
         SharedPreferences prefs = getSharedPreferences("settings", Context.MODE_PRIVATE);
         LogUtil.setEnableLog(prefs.getBoolean("enable_log", false));
 
@@ -161,7 +183,14 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         autoDeviceScanner.setScanInterval(interval);
         autoDeviceScanner.setEnabled(autoScan);
 
-        // 初始化可被发现请求
+        // 扫描开始监听：检查自身可见性
+        autoDeviceScanner.addScanStartListener(new AutoDeviceScanner.OnScanStartListener() {
+            @Override
+            public void onScanStart() {
+                checkAndRequestDiscoverable();
+            }
+        });
+
         initDiscoverableSettings();
 
         parseIntentExtras();
@@ -172,19 +201,43 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         loadDefaultFragment();
 
         getSupportFragmentManager().addOnBackStackChangedListener(this::updateEmptyHintVisibility);
+
+        // 自动扫描监听：仅处理文本消息（语音由 ChatWorkFragment 处理）
+        autoDeviceScanner.addListener(new AutoDeviceScanner.DeviceScanListener() {
+            @Override
+            public void onDeviceDetected(BluetoothDevice device) {
+                if (device == null) return;
+                List<PendingMessage> list = PendingMessageManager.getInstance(MainActivityNew.this)
+                        .getMessagesForDevice(device.getAddress());
+                for (PendingMessage msg : list) {
+                    if (msg.type == PendingMessage.TYPE_TEXT) {
+                        sendPendingMessage(msg);
+                    }
+                    // 语音不自动发送，由连接成功后 ChatWorkFragment 处理
+                }
+            }
+        });
+
+        // 处理外部文件分享
+        handleShareIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleShareIntent(intent);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        // 处理后台待请求可被发现
         if (pendingDiscoverableRequest) {
             pendingDiscoverableRequest = false;
             if (bluetoothAdapter != null && bluetoothAdapter.isEnabled()) {
                 requestDiscoverable();
             }
         }
-        // 如果设置了开启，但定时器未启动（比如从设置开启后返回），启动它
         if (requestDiscoverableEnabled) {
             startDiscoverableLoop();
         }
@@ -193,7 +246,6 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
     @Override
     protected void onPause() {
         super.onPause();
-        // 进入后台时不停止循环，由定时器自行决策
     }
 
     @Override
@@ -209,7 +261,9 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         stopBluetoothScan();
         safeUnregisterReceiver();
         handler.removeCallbacksAndMessages(null);
+        connectTimeoutHandler.removeCallbacksAndMessages(null);
         dismissDeviceDialog();
+        clearPendingShare();
     }
 
     // ==================== 初始化 ====================
@@ -358,9 +412,10 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         return getSupportFragmentManager().getBackStackEntryCount() == 0;
     }
 
-    // ==================== Fragment 管理 ====================
+    // ==================== Fragment 管理（安全版本） ====================
 
     private void loadFragment(Fragment fragment) {
+        if (isFinishing() || isDestroyed()) return;
         getSupportFragmentManager().beginTransaction()
                 .replace(R.id.fragment_container, fragment)
                 .addToBackStack(null)
@@ -369,6 +424,7 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
     }
 
     private void clearBackStack() {
+        if (isFinishing() || isDestroyed()) return;
         FragmentManager fm = getSupportFragmentManager();
         if (fm.getBackStackEntryCount() > 0) {
             FragmentManager.BackStackEntry first = fm.getBackStackEntryAt(0);
@@ -378,6 +434,15 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
     }
 
     public void switchToFragment(String fragmentType, String deviceAddress, String deviceName) {
+        if (isFinishing() || isDestroyed()) {
+            handler.post(() -> doSwitchToFragment(fragmentType, deviceAddress, deviceName));
+            return;
+        }
+        doSwitchToFragment(fragmentType, deviceAddress, deviceName);
+    }
+
+    private void doSwitchToFragment(String fragmentType, String deviceAddress, String deviceName) {
+        if (isFinishing() || isDestroyed()) return;
         Fragment fragment = null;
         if ("TalkbackFragment".equals(fragmentType)) {
             fragment = new TalkbackFragment();
@@ -393,6 +458,14 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         Bundle args = new Bundle();
         args.putString("DEVICE_ADDRESS", deviceAddress);
         args.putString("DEVICE_NAME", deviceName);
+        // 如果有待分享文件，一并传递
+        if (pendingShareFile != null) {
+            args.putString("EXTERNAL_FILE_PATH", pendingShareFile);
+            args.putString("EXTERNAL_FILE_NAME", pendingShareFileName);
+            args.putLong("EXTERNAL_FILE_SIZE", pendingShareFileSize);
+            // 清除实例变量（文件信息已存入 args）
+            clearPendingShare();
+        }
         fragment.setArguments(args);
 
         clearBackStack();
@@ -469,18 +542,137 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         loadFragment(f);
     }
 
-    // ==================== 自动扫描管理 ====================
+    // ==================== 待发送消息发送（含防呆重试） ====================
 
-    public void registerScanListener(AutoDeviceScanner.DeviceScanListener listener) {
-        if (autoDeviceScanner != null) {
-            autoDeviceScanner.addListener(listener);
+    private void cancelPendingConnect() {
+        if (connectTimeoutRunnable != null) {
+            connectTimeoutHandler.removeCallbacks(connectTimeoutRunnable);
+            connectTimeoutRunnable = null;
+        }
+        pendingSendAfterConnect = null;
+        pendingConnectRetryCount = 0;
+    }
+
+    public void sendPendingMessage(PendingMessage msg) {
+        if (msg == null || bluetoothService == null || !serviceBound) {
+            Toast.makeText(this, "服务未就绪", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String targetAddress = msg.targetDeviceAddress;
+        if (targetAddress == null || targetAddress.isEmpty()) {
+            Toast.makeText(this, "目标地址无效", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        cancelPendingConnect();
+
+        int state = bluetoothService.getState();
+        String currentAddress = bluetoothService.getConnectedDeviceAddress();
+
+        if (state == IBluetoothService.STATE_CONNECTED && targetAddress.equals(currentAddress)) {
+            handleConnectedMessage(msg);
+        } else {
+            pendingSendAfterConnect = msg;
+            pendingConnectRetryCount = 0;
+            attemptConnectAndSend();
         }
     }
 
-    public void unregisterScanListener(AutoDeviceScanner.DeviceScanListener listener) {
-        if (autoDeviceScanner != null) {
-            autoDeviceScanner.removeListener(listener);
+    private void attemptConnectAndSend() {
+        if (pendingSendAfterConnect == null || bluetoothService == null) return;
+
+        int state = bluetoothService.getState();
+        String currentAddr = bluetoothService.getConnectedDeviceAddress();
+        String targetAddr = pendingSendAfterConnect.targetDeviceAddress;
+
+        if (state == IBluetoothService.STATE_CONNECTED && targetAddr != null && targetAddr.equals(currentAddr)) {
+            handleConnectedMessage(pendingSendAfterConnect);
+            pendingSendAfterConnect = null;
+            pendingConnectRetryCount = 0;
+            if (connectTimeoutRunnable != null) {
+                connectTimeoutHandler.removeCallbacks(connectTimeoutRunnable);
+                connectTimeoutRunnable = null;
+            }
+            return;
         }
+
+        if (state == IBluetoothService.STATE_CONNECTING) {
+            LogUtil.d(TAG, "已处于连接中，等待回调");
+            return;
+        }
+
+        if (pendingConnectRetryCount >= MAX_CONNECT_RETRIES) {
+            Toast.makeText(this, "重连" + MAX_CONNECT_RETRIES + "次失败，请稍后重试", Toast.LENGTH_LONG).show();
+            pendingSendAfterConnect = null;
+            pendingConnectRetryCount = 0;
+            return;
+        }
+
+        pendingConnectRetryCount++;
+        Toast.makeText(this, "第" + pendingConnectRetryCount + "次尝试连接 " + pendingSendAfterConnect.targetDeviceName,
+                Toast.LENGTH_SHORT).show();
+
+        // 发起连接（无需提前 stop，setConnectionRole 内部会处理）
+        bluetoothService.setConnectionRole(true, targetAddr);
+
+        if (connectTimeoutRunnable != null) {
+            connectTimeoutHandler.removeCallbacks(connectTimeoutRunnable);
+        }
+        connectTimeoutRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (pendingSendAfterConnect == null) return;
+                int currentState = bluetoothService != null ? bluetoothService.getState() : IBluetoothService.STATE_NONE;
+                String connectedAddr = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+                if (currentState == IBluetoothService.STATE_CONNECTED &&
+                        connectedAddr != null && connectedAddr.equals(pendingSendAfterConnect.targetDeviceAddress)) {
+                    handleConnectedMessage(pendingSendAfterConnect);
+                    pendingSendAfterConnect = null;
+                    pendingConnectRetryCount = 0;
+                    return;
+                }
+                LogUtil.d(TAG, "连接超时，准备重试");
+                if (bluetoothService != null) {
+                    bluetoothService.stop();
+                }
+                handler.postDelayed(() -> attemptConnectAndSend(), CONNECT_RETRY_DELAY);
+            }
+        };
+        connectTimeoutHandler.postDelayed(connectTimeoutRunnable, CONNECT_TIMEOUT_MS);
+    }
+
+    private void handleConnectedMessage(PendingMessage msg) {
+        if (msg.type == PendingMessage.TYPE_TEXT) {
+            try {
+                String prefixed = IBluetoothService.TEXT_PREFIX + msg.content;
+                bluetoothService.write(prefixed.getBytes());
+                PendingMessageManager.getInstance(this).removeMessage(msg.id);
+                Toast.makeText(this, "文本已发送", Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                LogUtil.e(TAG, "发送文本异常", e);
+                Toast.makeText(this, "发送失败", Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            // 语音或文件：交由 ChatWorkFragment 处理
+            Fragment current = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
+            if (current instanceof ChatWorkFragment) {
+                ((ChatWorkFragment) current).sendPendingMessageDirectly(msg);
+            } else {
+                Toast.makeText(this, "跳转到聊天界面发送...", Toast.LENGTH_SHORT).show();
+                ChatWorkFragment.pendingMessageToSend = msg.id;
+                switchToFragment("ChatWorkFragment", msg.targetDeviceAddress, msg.targetDeviceName);
+            }
+        }
+    }
+
+    // ==================== 自动扫描管理 ====================
+
+    public void registerScanListener(AutoDeviceScanner.DeviceScanListener listener) {
+        if (autoDeviceScanner != null) autoDeviceScanner.addListener(listener);
+    }
+
+    public void unregisterScanListener(AutoDeviceScanner.DeviceScanListener listener) {
+        if (autoDeviceScanner != null) autoDeviceScanner.removeListener(listener);
     }
 
     public void updateAutoScannerSettings() {
@@ -493,14 +685,27 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         }
     }
 
+    // ★★★ 暂停/恢复自动扫描（供 ChatWorkFragment 调用） ★★★
+    public void pauseAutoScan() {
+        if (autoDeviceScanner != null) {
+            autoDeviceScanner.setEnabled(false);
+            LogUtil.d(TAG, "自动扫描已暂停（文件传输中）");
+        }
+    }
+
+    public void resumeAutoScan() {
+        if (autoDeviceScanner != null) {
+            updateAutoScannerSettings(); // 从 SharedPreferences 恢复扫描配置
+            LogUtil.d(TAG, "自动扫描已恢复");
+        }
+    }
+
     // ==================== 可被发现请求管理 ====================
 
     private void initDiscoverableSettings() {
         SharedPreferences prefs = getSharedPreferences("settings", MODE_PRIVATE);
         requestDiscoverableEnabled = prefs.getBoolean("request_discoverable", false);
-        if (requestDiscoverableEnabled) {
-            startDiscoverableLoop();
-        }
+        if (requestDiscoverableEnabled) startDiscoverableLoop();
     }
 
     public void updateDiscoverableSettings() {
@@ -522,17 +727,14 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
             public void run() {
                 if (!requestDiscoverableEnabled) return;
                 if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
-                    // 蓝牙未开启，稍后重试
                     discoverableHandler.postDelayed(this, 30000);
                     return;
                 }
                 int scanMode = bluetoothAdapter.getScanMode();
                 if (scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE) {
-                    // 已经可被发现，直接安排下次
                     discoverableHandler.postDelayed(this, DISCOVERABLE_DURATION * 1000L);
                     return;
                 }
-                // 需要请求可被发现
                 if (isAppInForeground()) {
                     requestDiscoverable();
                 } else {
@@ -559,7 +761,23 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
         intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, DISCOVERABLE_DURATION);
         startActivity(intent);
+        lastDiscoverableRequestTime = System.currentTimeMillis();
         LogUtil.d(TAG, "请求可被发现，持续 " + DISCOVERABLE_DURATION + " 秒");
+    }
+
+    private void checkAndRequestDiscoverable() {
+        if (bluetoothAdapter == null) return;
+        int scanMode = bluetoothAdapter.getScanMode();
+        if (scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE) {
+            LogUtil.d(TAG, "本机已可被发现");
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastDiscoverableRequestTime < DISCOVERABLE_REQUEST_INTERVAL) {
+            LogUtil.d(TAG, "距上次请求可被发现不足300秒，跳过");
+            return;
+        }
+        requestDiscoverable();
     }
 
     private void sendDiscoverableNotification() {
@@ -599,9 +817,7 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         }
 
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (nm != null) {
-            nm.notify(1003, notification);
-        }
+        if (nm != null) nm.notify(1003, notification);
         LogUtil.d(TAG, "发送可被发现请求通知");
     }
 
@@ -685,13 +901,9 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
 
             availableDevices.add(device);
             String name = device.getName();
-            if (name == null || name.isEmpty()) {
-                name = "未知设备 (" + device.getAddress() + ")";
-            }
+            if (name == null || name.isEmpty()) name = "未知设备 (" + device.getAddress() + ")";
             deviceNames.add(name);
-            if (adapter != null) {
-                runOnUiThread(() -> adapter.notifyDataSetChanged());
-            }
+            if (adapter != null) runOnUiThread(() -> adapter.notifyDataSetChanged());
         }
 
         private void startDeviceScanning() {
@@ -733,17 +945,11 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         }
     }
 
-    private void showDeviceSelectionDialog() {
-        deviceSelector.show();
-    }
+    private void showDeviceSelectionDialog() { deviceSelector.show(); }
 
-    private void stopScanSafely() {
-        if (bluetoothFinder != null) bluetoothFinder.stopScan();
-    }
+    private void stopScanSafely() { if (bluetoothFinder != null) bluetoothFinder.stopScan(); }
 
-    private void stopBluetoothScan() {
-        if (bluetoothFinder != null) bluetoothFinder.stopScan();
-    }
+    private void stopBluetoothScan() { if (bluetoothFinder != null) bluetoothFinder.stopScan(); }
 
     private void safeUnregisterReceiver() {
         if (isReceiverRegistered) {
@@ -756,9 +962,7 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         }
     }
 
-    private void dismissDeviceDialog() {
-        deviceSelector.dismiss();
-    }
+    private void dismissDeviceDialog() { deviceSelector.dismiss(); }
 
     // ==================== 菜单 ====================
 
@@ -825,20 +1029,54 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
             }
             updateStatusDisplay();
 
-            if (state == IBluetoothService.STATE_CONNECTED && !isFileTransferring && !callManager.isInCall()) {
-                if (bluetoothService == null) return;
-                int mode = bluetoothService.getMode();
-                String address = bluetoothService.getConnectedDeviceAddress();
-                String name = bluetoothService.getConnectedDeviceName();
-                if (address == null || name == null) return;
-                Fragment current = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
-                boolean isChat = current instanceof ChatWorkFragment;
-                boolean isTalkback = current instanceof TalkbackFragment;
+            if (state == IBluetoothService.STATE_CONNECTED) {
+                // 处理待发送消息
+                Fragment currentFragment = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
+                if (currentFragment instanceof ChatWorkFragment) {
+                    ChatWorkFragment chatFrag = (ChatWorkFragment) currentFragment;
+                    String address = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+                    if (address != null) {
+                        chatFrag.attemptSendPendingForDevice(address);
+                    }
+                }
 
-                if (mode == IBluetoothService.MODE_CHAT && !isChat) {
-                    switchToFragment("ChatWorkFragment", address, name);
-                } else if (mode == IBluetoothService.MODE_TALKBACK && !isTalkback) {
-                    switchToFragment("TalkbackFragment", address, name);
+                if (pendingSendAfterConnect != null) {
+                    String targetAddr = pendingSendAfterConnect.targetDeviceAddress;
+                    String currentAddr = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+                    if (currentAddr != null && targetAddr != null && currentAddr.equals(targetAddr)) {
+                        handleConnectedMessage(pendingSendAfterConnect);
+                        pendingSendAfterConnect = null;
+                        pendingConnectRetryCount = 0;
+                        if (connectTimeoutRunnable != null) {
+                            connectTimeoutHandler.removeCallbacks(connectTimeoutRunnable);
+                            connectTimeoutRunnable = null;
+                        }
+                    } else {
+                        pendingSendAfterConnect = null;
+                        pendingConnectRetryCount = 0;
+                    }
+                }
+
+                // 自动跳转（使用安全方式）
+                if (!isFileTransferring && !callManager.isInCall() && bluetoothService != null) {
+                    int mode = bluetoothService.getMode();
+                    String address = bluetoothService.getConnectedDeviceAddress();
+                    String name = bluetoothService.getConnectedDeviceName();
+                    if (address != null && name != null) {
+                        Fragment current = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
+                        boolean isChat = current instanceof ChatWorkFragment;
+                        boolean isTalkback = current instanceof TalkbackFragment;
+                        if (mode == IBluetoothService.MODE_CHAT && !isChat) {
+                            handler.post(() -> switchToFragment("ChatWorkFragment", address, name));
+                        } else if (mode == IBluetoothService.MODE_TALKBACK && !isTalkback) {
+                            handler.post(() -> switchToFragment("TalkbackFragment", address, name));
+                        }
+                    }
+                }
+            } else if (state == IBluetoothService.STATE_NONE || state == IBluetoothService.STATE_LISTEN) {
+                if (pendingSendAfterConnect != null && connectTimeoutRunnable != null) {
+                    connectTimeoutHandler.removeCallbacks(connectTimeoutRunnable);
+                    connectTimeoutRunnable = null;
                 }
             }
         });
@@ -859,9 +1097,7 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
     }
 
     @Override
-    public void onNonTextDataReceived(String deviceAddress) {
-        // 忽略
-    }
+    public void onNonTextDataReceived(String deviceAddress) { /* 忽略 */ }
 
     // ==================== 呼叫回调 ====================
 
@@ -908,9 +1144,7 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
     @Override
     public void onCallAccepted(String deviceAddress) {
         runOnUiThread(() -> {
-            if (!callManager.isInCall()) {
-                startCall(deviceAddress, connectedDeviceName);
-            }
+            if (!callManager.isInCall()) startCall(deviceAddress, connectedDeviceName);
         });
     }
 
@@ -1041,13 +1275,8 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         }
     }
 
-    public void startCall(String targetAddress, String targetName) {
-        callManager.startCall(targetAddress, targetName);
-    }
-
-    public void endCall() {
-        callManager.endCall();
-    }
+    public void startCall(String targetAddress, String targetName) { callManager.startCall(targetAddress, targetName); }
+    public void endCall() { callManager.endCall(); }
 
     public void dialCall() {
         if (callManager.isInCall()) {
@@ -1121,9 +1350,7 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
 
     // ==================== 工具方法 ====================
 
-    public void setFileTransferring(boolean transferring) {
-        this.isFileTransferring = transferring;
-    }
+    public void setFileTransferring(boolean transferring) { this.isFileTransferring = transferring; }
 
     public void setFileTransferStatus(String status) {
         runOnUiThread(() -> {
@@ -1150,12 +1377,107 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
 
     private void unbindServiceIfNeeded() {
         if (serviceBound) {
-            if (bluetoothService != null) {
-                bluetoothService.unregisterCallback(this);
-            }
+            if (bluetoothService != null) bluetoothService.unregisterCallback(this);
             unbindService(serviceConnection);
             serviceBound = false;
         }
+    }
+
+    @Override
+    public void onMessageConfirmed(long timestamp) {
+        runOnUiThread(() -> Toast.makeText(this, "对方已收到消息", Toast.LENGTH_SHORT).show());
+    }
+
+    // ==================== 外部文件分享 ====================
+
+    private void handleShareIntent(Intent intent) {
+        if (intent == null) return;
+        String action = intent.getAction();
+        if (!Intent.ACTION_SEND.equals(action)) return;
+
+        Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        if (uri == null) return;
+
+        try {
+            String fileName = null;
+            long fileSize = 0;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+                    if (cursor != null && cursor.moveToFirst()) {
+                        int nameIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
+                        if (nameIndex >= 0) fileName = cursor.getString(nameIndex);
+                        int sizeIndex = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE);
+                        if (sizeIndex >= 0) fileSize = cursor.getLong(sizeIndex);
+                    }
+                }
+            }
+            if (fileName == null) fileName = "file_" + System.currentTimeMillis();
+            if (fileSize == 0) {
+                try (AssetFileDescriptor fd = getContentResolver().openAssetFileDescriptor(uri, "r")) {
+                    if (fd != null) fileSize = fd.getLength();
+                }
+            }
+
+            File cacheDir = new File(getCacheDir(), "shared_files");
+            if (!cacheDir.exists()) cacheDir.mkdirs();
+            File destFile = new File(cacheDir, fileName);
+            try (InputStream is = getContentResolver().openInputStream(uri);
+                 FileOutputStream fos = new FileOutputStream(destFile)) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = is.read(buffer)) != -1) fos.write(buffer, 0, len);
+            }
+
+            // 存入实例变量
+            pendingShareFile = destFile.getAbsolutePath();
+            pendingShareFileName = fileName;
+            pendingShareFileSize = fileSize;
+
+            showPairedDeviceDialog();
+
+        } catch (Exception e) {
+            LogUtil.e(TAG, "处理分享文件失败", e);
+            Toast.makeText(this, "无法读取文件", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void showPairedDeviceDialog() {
+        if (bluetoothAdapter == null) return;
+        Set<BluetoothDevice> bonded = bluetoothAdapter.getBondedDevices();
+        if (bonded.isEmpty()) {
+            Toast.makeText(this, "没有已配对的设备", Toast.LENGTH_SHORT).show();
+            clearPendingShare();
+            return;
+        }
+
+        final List<BluetoothDevice> deviceList = new ArrayList<>(bonded);
+        final List<String> deviceNames = new ArrayList<>();
+        for (BluetoothDevice d : deviceList) {
+            String name = d.getName();
+            if (name == null || name.isEmpty()) name = "未知设备";
+            deviceNames.add(name);
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择发送设备");
+        builder.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, deviceNames),
+                (dialog, which) -> {
+                    BluetoothDevice device = deviceList.get(which);
+                    switchToFragment("ChatWorkFragment", device.getAddress(), device.getName());
+                });
+        builder.setNegativeButton("取消", (dialog, which) -> {
+            clearPendingShare();
+        });
+        builder.show();
+    }
+
+    private void clearPendingShare() {
+        if (pendingShareFile != null) {
+            new File(pendingShareFile).delete();
+        }
+        pendingShareFile = null;
+        pendingShareFileName = null;
+        pendingShareFileSize = 0;
     }
 
     // ==================== 内部 Fragments ====================
@@ -1191,25 +1513,19 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         @Override
         public void onDestroyView() {
             super.onDestroyView();
-            if (mainActivity != null) {
-                mainActivity.unregisterScanListener(this);
-            }
+            if (mainActivity != null) mainActivity.unregisterScanListener(this);
         }
 
         @Override
         public void onResume() {
             super.onResume();
-            if (mainActivity != null) {
-                mainActivity.registerScanListener(this);
-            }
+            if (mainActivity != null) mainActivity.registerScanListener(this);
         }
 
         @Override
         public void onPause() {
             super.onPause();
-            if (mainActivity != null) {
-                mainActivity.unregisterScanListener(this);
-            }
+            if (mainActivity != null) mainActivity.unregisterScanListener(this);
         }
 
         @Override
@@ -1217,9 +1533,7 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
             if (device == null || getActivity() == null) return;
             if (mainActivity != null && mainActivity.getPairedDevices().contains(device)) {
                 scannedAddresses.add(device.getAddress());
-                if (adapter != null) {
-                    adapter.notifyDataSetChanged();
-                }
+                if (adapter != null) adapter.notifyDataSetChanged();
             }
         }
 
@@ -1291,10 +1605,17 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
             Button btnName = view.findViewById(R.id.btnName);
             Button btnAbout = view.findViewById(R.id.btnAbout);
             Button btnSettings = view.findViewById(R.id.btnSettings);
-
+            Button btnPendingMessages = view.findViewById(R.id.btnPendingMessages);
+            btnPendingMessages.setOnClickListener(v -> {
+                PendingMessagesFragment fragment = new PendingMessagesFragment();
+                getActivity().getSupportFragmentManager()
+                        .beginTransaction()
+                        .replace(R.id.fragment_container, fragment)
+                        .addToBackStack("pending")
+                        .commit();
+            });
             btnName.setOnClickListener(v -> showNameDialog());
             btnAbout.setOnClickListener(v -> showAboutDialog());
-
             btnSettings.setOnClickListener(v -> {
                 SettingFragment fragment = new SettingFragment();
                 getActivity().getSupportFragmentManager()
@@ -1303,7 +1624,6 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
                         .addToBackStack("settings")
                         .commit();
             });
-
             return view;
         }
 
@@ -1366,11 +1686,4 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
 
     // 为了让内部类能访问外部类的 private 字段，保留此列表
     private final List<BluetoothDevice> pairedDevices = new ArrayList<>();
-    //==========确认=============
-    @Override
-    public void onMessageConfirmed(long timestamp) {
-        runOnUiThread(() -> {
-            Toast.makeText(this, "对方已收到消息", Toast.LENGTH_SHORT).show();
-        });
-    }
 }

@@ -21,5 +21,12 @@
         android:id="@+id/btnAbout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="关于"/>
+        android:text="关于"
+        android:layout_marginBottom="16dp"/>
+
+    <Button
+        android:id="@+id/btnPendingMessages"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="待发送消息列表" />
 </LinearLayout>

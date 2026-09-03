@@ -12,10 +12,6 @@ import android.os.Looper;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
-/**
- * 自动探测扫描工具类
- * 定时扫描附近蓝牙设备，并通过回调通知监听器
- */
 public class AutoDeviceScanner {
     private static final String TAG = "AutoDeviceScanner";
 
@@ -23,10 +19,11 @@ public class AutoDeviceScanner {
     private BluetoothAdapter bluetoothAdapter;
     private Handler handler = new Handler(Looper.getMainLooper());
     private Runnable scanRunnable;
-    private int scanIntervalSeconds = 60; // 默认60秒
+    private int scanIntervalSeconds = 60;
     private boolean isEnabled = false;
     private boolean isScanning = false;
     private Set<DeviceScanListener> listeners = new CopyOnWriteArraySet<>();
+    private Set<OnScanStartListener> scanStartListeners = new CopyOnWriteArraySet<>();
 
     private BroadcastReceiver discoveryReceiver = new BroadcastReceiver() {
         @Override
@@ -99,6 +96,12 @@ public class AutoDeviceScanner {
             return;
         }
         if (isScanning) return;
+
+        // ★★★ 扫描前通知监听器（用于检查自身可见性） ★★★
+        for (OnScanStartListener listener : scanStartListeners) {
+            listener.onScanStart();
+        }
+
         LogUtil.d(TAG, "开始扫描附近设备...");
         isScanning = true;
         bluetoothAdapter.startDiscovery();
@@ -131,12 +134,22 @@ public class AutoDeviceScanner {
         }
     }
 
+    // ==================== 监听器管理 ====================
+
     public void addListener(DeviceScanListener listener) {
         listeners.add(listener);
     }
 
     public void removeListener(DeviceScanListener listener) {
         listeners.remove(listener);
+    }
+
+    public void addScanStartListener(OnScanStartListener listener) {
+        scanStartListeners.add(listener);
+    }
+
+    public void removeScanStartListener(OnScanStartListener listener) {
+        scanStartListeners.remove(listener);
     }
 
     public void release() {
@@ -147,9 +160,16 @@ public class AutoDeviceScanner {
             LogUtil.e(TAG, "取消注册接收器失败", e);
         }
         listeners.clear();
+        scanStartListeners.clear();
     }
+
+    // ==================== 接口定义 ====================
 
     public interface DeviceScanListener {
         void onDeviceDetected(BluetoothDevice device);
+    }
+
+    public interface OnScanStartListener {
+        void onScanStart();
     }
 }

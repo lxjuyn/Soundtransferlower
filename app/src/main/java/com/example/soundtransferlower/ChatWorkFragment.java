@@ -67,6 +67,14 @@ public class ChatWorkFragment extends Fragment implements
     private static final String VOICE_MARKER = "[VOICE]";
     private static final long MAX_FILE_SIZE = 5000 * 1024 * 1024;
 
+    // ---------- 静态变量：从待发送列表跳转后自动发送 ----------
+    public static String pendingMessageToSend = null;
+
+    // ---------- 外部文件分享（从Bundle传入） ----------
+    private String externalFile = null;
+    private String externalFileName = null;
+    private long externalFileSize = 0;
+
     // ---------- UI ----------
     private TextView tvDeviceName;
     private RecyclerView recyclerViewMessages;
@@ -89,13 +97,6 @@ public class ChatWorkFragment extends Fragment implements
     private MessageAdapter messageAdapter;
     private List<Message> messageList = new ArrayList<>();
 
-    // ---------- 状态管理 ----------
-    private final FileTransferState fileTransferState = new FileTransferState();
-    private final VoiceState voiceState = new VoiceState();
-
-    // 等待重发的文本消息
-    private String pendingTextMessage = null;
-
     // ---------- 删除状态 ----------
     private boolean deleteConfirmation = false;
     private final Handler deleteHandler = new Handler();
@@ -111,37 +112,31 @@ public class ChatWorkFragment extends Fragment implements
     private final Handler voiceBlinkHandler = new Handler();
     private Runnable voiceBlinkRunnable;
 
+    // ---------- 文件传输状态 ----------
+    private boolean isFileSender = false;
+    private boolean isWaitingForAccept = false;
+    private String pendingFileName;
+    private long pendingFileSize;
+    private String localFilePath;
+    private String pendingReceiveFileName;
+    private long transferStartTime = 0;
+    private long lastProgressBytes = 0;
+    private long lastProgressTime = 0;
+    private int pendingVoiceDuration = 0;
+
+    // ---------- 语音录音 ----------
+    private VoiceRecorder voiceRecorder;
+    private int currentVoiceDuration = 0;
+    private String pendingTextMessage = null; // 重连后自动发送
+
+    // ---------- 待发送消息池 ----------
+    private PendingMessageManager pendingManager;
+
     // ---------- 非文本数据计数 ----------
     private int nonTextDataCount = 0;
     private final Handler nonTextHandler = new Handler(Looper.getMainLooper());
     private final Runnable resetNonTextDataCount = () -> nonTextDataCount = 0;
     private final Set<String> processedMessages = new HashSet<>();
-
-    // ---------- 内部状态类 ----------
-    private static class FileTransferState {
-        boolean isFileSender = false;
-        boolean isWaitingForAccept = false;
-        String pendingFileName;
-        long pendingFileSize;
-        String localFilePath;
-        String pendingReceiveFileName;
-        long transferStartTime = 0;
-        long lastProgressBytes = 0;
-        long lastProgressTime = 0;
-        int pendingVoiceDuration = 0;
-    }
-
-    private static class VoiceState {
-        VoiceRecorder recorder;
-        int currentDuration = 0;
-
-        void release() {
-            if (recorder != null) {
-                recorder.release();
-                recorder = null;
-            }
-        }
-    }
 
     // ---------- ServiceConnection ----------
     private final ServiceConnection serviceConnection = new ServiceConnection() {
@@ -157,6 +152,7 @@ public class ChatWorkFragment extends Fragment implements
                 int state = bluetoothService.getState();
                 if (state == IBluetoothService.STATE_CONNECTED) {
                     loadChatHistory();
+                    checkAndSendExternalFile();
                 } else if (state == IBluetoothService.STATE_CONNECTING) {
                     LogUtil.d(TAG, "Already connecting, wait for callback");
                 } else {
@@ -203,18 +199,49 @@ public class ChatWorkFragment extends Fragment implements
         if (args != null) {
             deviceAddress = args.getString("DEVICE_ADDRESS");
             deviceName = args.getString("DEVICE_NAME");
+            externalFile = args.getString("EXTERNAL_FILE_PATH");
+            externalFileName = args.getString("EXTERNAL_FILE_NAME");
+            externalFileSize = args.getLong("EXTERNAL_FILE_SIZE", 0);
         }
 
         initUI(view);
         bindServices();
         delayedLoadHistory();
+        pendingManager = PendingMessageManager.getInstance(getActivity());
+
+        if (externalFile != null && deviceAddress != null) {
+            new Handler(Looper.getMainLooper()).postDelayed(this::checkAndSendExternalFile, 500);
+        }
+
         return view;
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (pendingMessageToSend != null) {
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                PendingMessage msg = pendingManager.getMessageById(pendingMessageToSend);
+                if (msg != null && isServiceReady()) {
+                    sendPendingMessageDirectly(msg);
+                }
+                pendingMessageToSend = null;
+            }, 300);
+        }
+        if (externalFile != null && deviceAddress != null) {
+            checkAndSendExternalFile();
+        }
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
         cleanupResources();
+        clearExternalFile();
+        // 确保扫描恢复（若传输中断）
+        if (getActivity() instanceof MainActivityNew) {
+            ((MainActivityNew) getActivity()).resumeAutoScan();
+        }
     }
 
     // ==================== 初始化 ====================
@@ -287,12 +314,14 @@ public class ChatWorkFragment extends Fragment implements
 
     private void cleanupResources() {
         historyLoaded = false;
-        pendingTextMessage = null;
         deleteHandler.removeCallbacks(deleteResetRunnable);
         nonTextHandler.removeCallbacks(resetNonTextDataCount);
         stopVoicePlayback();
         voiceBlinkHandler.removeCallbacksAndMessages(null);
-        voiceState.release();
+        if (voiceRecorder != null) {
+            voiceRecorder.release();
+            voiceRecorder = null;
+        }
 
         if (fileTransferBound) {
             fileTransferService.unregisterCallback(this);
@@ -306,6 +335,67 @@ public class ChatWorkFragment extends Fragment implements
             getActivity().unbindService(serviceConnection);
             serviceBound = false;
         }
+    }
+
+    // ==================== 外部文件分享 ====================
+
+    private void checkAndSendExternalFile() {
+        if (externalFile == null || deviceAddress == null) {
+            LogUtil.d(TAG, "无待发送外部文件");
+            return;
+        }
+        if (!isServiceReady()) {
+            if (bluetoothService != null) {
+                bluetoothService.connect(deviceAddress);
+            }
+            return;
+        }
+        sendExternalFile();
+    }
+
+    private void sendExternalFile() {
+        if (externalFile == null) return;
+        try {
+            File file = new File(externalFile);
+            if (!file.exists()) {
+                Toast.makeText(getActivity(), "文件不存在", Toast.LENGTH_SHORT).show();
+                clearExternalFile();
+                return;
+            }
+            // 暂停自动扫描
+            if (getActivity() instanceof MainActivityNew) {
+                ((MainActivityNew) getActivity()).pauseAutoScan();
+            }
+            localFilePath = file.getAbsolutePath();
+            pendingFileName = externalFileName;
+            pendingFileSize = externalFileSize;
+            isFileSender = true;
+            isWaitingForAccept = true;
+            transferStartTime = System.currentTimeMillis();
+            lastProgressBytes = 0;
+            lastProgressTime = 0;
+
+            sendFileRequest(externalFileName, externalFileSize, 0);
+            clearExternalFile();
+            Toast.makeText(getActivity(), "文件请求已发送，等待对方响应", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            LogUtil.e(TAG, "外部文件发送失败", e);
+            Toast.makeText(getActivity(), "发送失败", Toast.LENGTH_SHORT).show();
+            clearExternalFile();
+            // 恢复扫描
+            if (getActivity() instanceof MainActivityNew) {
+                ((MainActivityNew) getActivity()).resumeAutoScan();
+            }
+        }
+    }
+
+    private void clearExternalFile() {
+        if (externalFile != null) {
+            new File(externalFile).delete();
+        }
+        externalFile = null;
+        externalFileName = null;
+        externalFileSize = 0;
     }
 
     // ==================== 菜单 ====================
@@ -577,13 +667,8 @@ public class ChatWorkFragment extends Fragment implements
         String message = etMessage.getText().toString().trim();
         if (TextUtils.isEmpty(message)) return;
         if (!isServiceReady()) {
-            pendingTextMessage = message;
-            tryReconnectAndThen(() -> {
-                if (isServiceReady()) {
-                    doSendTextMessage(pendingTextMessage);
-                    pendingTextMessage = null;
-                }
-            });
+            addPendingMessage(PendingMessage.TYPE_TEXT, message, "设备不在线");
+            etMessage.setText("");
             return;
         }
         doSendTextMessage(message);
@@ -638,15 +723,19 @@ public class ChatWorkFragment extends Fragment implements
                     InputStream is = resolver.openInputStream(uri);
                     byte[] bytes = readBytes(is);
                     is.close();
-                    fileTransferState.localFilePath = saveFileToLocal(bytes, fileName);
+                    localFilePath = saveFileToLocal(bytes, fileName);
                 } else {
                     InputStream is = resolver.openInputStream(uri);
-                    fileTransferState.localFilePath = saveFileToLocalFromStream(is, fileName);
+                    localFilePath = saveFileToLocalFromStream(is, fileName);
                     is.close();
                 }
 
-                fileTransferState.pendingFileName = fileName;
-                fileTransferState.pendingFileSize = fileSize;
+                pendingFileName = fileName;
+                pendingFileSize = fileSize;
+                // 暂停自动扫描
+                if (getActivity() instanceof MainActivityNew) {
+                    ((MainActivityNew) getActivity()).pauseAutoScan();
+                }
                 sendFileRequest(fileName, fileSize, 0);
 
             } catch (Exception e) {
@@ -663,15 +752,19 @@ public class ChatWorkFragment extends Fragment implements
                 + fileName + "," + size;
         if (duration > 0) request += ",VOICE," + duration;
         bluetoothService.write(request.getBytes());
-        fileTransferState.isWaitingForAccept = true;
-        fileTransferState.isFileSender = true;
+        isWaitingForAccept = true;
+        isFileSender = true;
         Toast.makeText(getActivity(), duration > 0 ? "发送语音..." : "已发送文件请求...",
                 Toast.LENGTH_SHORT).show();
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (fileTransferState.isWaitingForAccept) {
-                fileTransferState.isWaitingForAccept = false;
-                fileTransferState.localFilePath = null;
+            if (isWaitingForAccept) {
+                isWaitingForAccept = false;
+                localFilePath = null;
                 Toast.makeText(getActivity(), "对方未响应", Toast.LENGTH_SHORT).show();
+                // 恢复扫描
+                if (getActivity() instanceof MainActivityNew) {
+                    ((MainActivityNew) getActivity()).resumeAutoScan();
+                }
             }
         }, 30000);
     }
@@ -680,25 +773,32 @@ public class ChatWorkFragment extends Fragment implements
         if (getActivity() == null) return;
 
         if (duration > 0) {
-            fileTransferState.pendingReceiveFileName = fileName;
-            fileTransferState.pendingVoiceDuration = duration;
+            pendingReceiveFileName = fileName;
+            pendingVoiceDuration = duration;
             bluetoothService.write((IBluetoothService.TEXT_PREFIX + IBluetoothService.FILE_ACCEPT).getBytes());
+            // 暂停扫描
+            if (getActivity() instanceof MainActivityNew) {
+                ((MainActivityNew) getActivity()).pauseAutoScan();
+            }
             pauseBluetoothAndStartFileReceive();
             return;
         }
 
-        fileTransferState.pendingReceiveFileName = fileName;
+        pendingReceiveFileName = fileName;
         new AlertDialog.Builder(getActivity())
                 .setTitle("接收文件")
                 .setMessage("对方发送文件: " + fileName + " (" + (size / 1024) + "KB)\n是否接收？")
                 .setPositiveButton("接收", (dialog, which) -> {
                     bluetoothService.write((IBluetoothService.TEXT_PREFIX + IBluetoothService.FILE_ACCEPT).getBytes());
+                    if (getActivity() instanceof MainActivityNew) {
+                        ((MainActivityNew) getActivity()).pauseAutoScan();
+                    }
                     pauseBluetoothAndStartFileReceive();
                 })
                 .setNegativeButton("拒绝", (dialog, which) -> {
                     bluetoothService.write((IBluetoothService.TEXT_PREFIX + IBluetoothService.FILE_REJECT).getBytes());
                     Toast.makeText(getActivity(), "已拒绝接收文件", Toast.LENGTH_SHORT).show();
-                    fileTransferState.pendingReceiveFileName = null;
+                    pendingReceiveFileName = null;
                 })
                 .setCancelable(false)
                 .show();
@@ -710,16 +810,16 @@ public class ChatWorkFragment extends Fragment implements
             ((MainActivityNew) getActivity()).setFileTransferStatus("文件接收中...");
         }
 
-        fileTransferState.transferStartTime = System.currentTimeMillis();
-        fileTransferState.lastProgressBytes = 0;
-        fileTransferState.lastProgressTime = 0;
-        fileTransferState.isFileSender = false;
+        transferStartTime = System.currentTimeMillis();
+        lastProgressBytes = 0;
+        lastProgressTime = 0;
+        isFileSender = false;
 
         Intent intent = new Intent(getActivity(), BluetoothFileTransferService.class);
         intent.putExtra("ACTION", "RECEIVE");
         intent.putExtra("SAVE_DIR", getActivity().getExternalFilesDir(null) + "/files");
-        if (fileTransferState.pendingReceiveFileName != null) {
-            intent.putExtra("FILE_NAME", fileTransferState.pendingReceiveFileName);
+        if (pendingReceiveFileName != null) {
+            intent.putExtra("FILE_NAME", pendingReceiveFileName);
         }
         getActivity().startService(intent);
         getActivity().bindService(intent, fileTransferConnection, Context.BIND_AUTO_CREATE);
@@ -731,15 +831,18 @@ public class ChatWorkFragment extends Fragment implements
             ((MainActivityNew) getActivity()).setFileTransferring(true);
             ((MainActivityNew) getActivity()).setFileTransferStatus("文件发送中...");
         }
-        fileTransferState.transferStartTime = System.currentTimeMillis();
-        fileTransferState.lastProgressBytes = 0;
-        fileTransferState.lastProgressTime = 0;
-        fileTransferState.isWaitingForAccept = false;
+        transferStartTime = System.currentTimeMillis();
+        lastProgressBytes = 0;
+        lastProgressTime = 0;
+        isWaitingForAccept = false;
         if (serviceBound && bluetoothService != null) bluetoothService.stop();
-        fileTransferState.isFileSender = true;
-
+        isFileSender = true;
         if (filePath == null || !new File(filePath).exists()) {
             Toast.makeText(getActivity(), "文件不存在", Toast.LENGTH_SHORT).show();
+            // 恢复扫描
+            if (getActivity() instanceof MainActivityNew) {
+                ((MainActivityNew) getActivity()).resumeAutoScan();
+            }
             return;
         }
         Intent intent = new Intent(getActivity(), BluetoothFileTransferService.class);
@@ -755,8 +858,8 @@ public class ChatWorkFragment extends Fragment implements
     // ==================== 语音录音 ====================
 
     private void startVoiceRecording() {
-        if (voiceState.recorder == null) {
-            voiceState.recorder = new VoiceRecorder(new VoiceRecorder.OnVoiceRecordListener() {
+        if (voiceRecorder == null) {
+            voiceRecorder = new VoiceRecorder(new VoiceRecorder.OnVoiceRecordListener() {
                 @Override
                 public void onRecordStart() {
                     getActivity().runOnUiThread(() -> {
@@ -772,7 +875,7 @@ public class ChatWorkFragment extends Fragment implements
 
                 @Override
                 public void onRecordFinish(File voiceFile, int durationSeconds) {
-                    voiceState.currentDuration = durationSeconds;
+                    currentVoiceDuration = durationSeconds;
                     sendVoiceFile(voiceFile, durationSeconds);
                     getActivity().runOnUiThread(() -> {
                         etMessage.setVisibility(View.VISIBLE);
@@ -802,7 +905,7 @@ public class ChatWorkFragment extends Fragment implements
                 return;
             }
             File file = new File(voiceDir, System.currentTimeMillis() + ".opus");
-            voiceState.recorder.startRecording(file);
+            voiceRecorder.startRecording(file);
         } catch (Exception e) {
             LogUtil.e(TAG, "启动录音失败", e);
             Toast.makeText(getActivity(), "启动录音失败", Toast.LENGTH_SHORT).show();
@@ -814,12 +917,12 @@ public class ChatWorkFragment extends Fragment implements
     }
 
     private void stopVoiceRecordingAndSend() {
-        if (voiceState.recorder != null) voiceState.recorder.stopRecording();
+        if (voiceRecorder != null) voiceRecorder.stopRecording();
     }
 
     private void sendVoiceFile(File voiceFile, int duration) {
         if (!isServiceReady()) {
-            Toast.makeText(getActivity(), "未连接，无法发送语音", Toast.LENGTH_SHORT).show();
+            addPendingMessage(PendingMessage.TYPE_VOICE, voiceFile.getAbsolutePath(), "设备不在线");
             return;
         }
         try {
@@ -827,15 +930,21 @@ public class ChatWorkFragment extends Fragment implements
             FileInputStream fis = new FileInputStream(voiceFile);
             fis.read(data);
             fis.close();
-            fileTransferState.localFilePath = voiceFile.getAbsolutePath();
-            fileTransferState.pendingFileName = voiceFile.getName();
-            fileTransferState.pendingFileSize = data.length;
-            fileTransferState.pendingVoiceDuration = duration; // 关键：用于发送方识别
-            voiceState.currentDuration = duration; // 用于显示
+            localFilePath = voiceFile.getAbsolutePath();
+            pendingFileName = voiceFile.getName();
+            pendingFileSize = data.length;
+            currentVoiceDuration = duration;
+            // 暂停扫描
+            if (getActivity() instanceof MainActivityNew) {
+                ((MainActivityNew) getActivity()).pauseAutoScan();
+            }
             sendFileRequest(voiceFile.getName(), data.length, duration);
         } catch (IOException e) {
             LogUtil.e(TAG, "读取语音文件失败", e);
             Toast.makeText(getActivity(), "发送失败", Toast.LENGTH_SHORT).show();
+            if (getActivity() instanceof MainActivityNew) {
+                ((MainActivityNew) getActivity()).resumeAutoScan();
+            }
         }
     }
 
@@ -863,11 +972,11 @@ public class ChatWorkFragment extends Fragment implements
             fis.read(data);
             fis.close();
 
-            if (voiceState.recorder == null) {
-                voiceState.recorder = new VoiceRecorder(null);
+            if (voiceRecorder == null) {
+                voiceRecorder = new VoiceRecorder(null);
             }
 
-            voiceState.recorder.playVoice(data, data.length, message.getVoiceDuration(),
+            voiceRecorder.playVoice(data, data.length, message.getVoiceDuration(),
                     new VoiceRecorder.OnPlayListener() {
                         @Override
                         public void onPlayStart() {
@@ -923,8 +1032,8 @@ public class ChatWorkFragment extends Fragment implements
             playingPosition = -1;
         }
         currentPlayingVoice = null;
-        if (voiceState.recorder != null) {
-            voiceState.recorder.stopPlayback();
+        if (voiceRecorder != null) {
+            voiceRecorder.stopPlayback();
         }
     }
 
@@ -933,26 +1042,26 @@ public class ChatWorkFragment extends Fragment implements
     @Override
     public void onProgressUpdate(long totalBytes, long transferredBytes, int progress) {
         long now = System.currentTimeMillis();
-        if (fileTransferState.lastProgressTime == 0) {
-            fileTransferState.lastProgressTime = now;
-            fileTransferState.lastProgressBytes = transferredBytes;
+        if (lastProgressTime == 0) {
+            lastProgressTime = now;
+            lastProgressBytes = transferredBytes;
             return;
         }
-        long deltaTime = now - fileTransferState.lastProgressTime;
+        long deltaTime = now - lastProgressTime;
         if (deltaTime < 100) return;
-        long deltaBytes = transferredBytes - fileTransferState.lastProgressBytes;
+        long deltaBytes = transferredBytes - lastProgressBytes;
         double speed = (deltaBytes * 1000.0) / deltaTime;
         String speedStr;
         if (speed < 1024) speedStr = String.format(Locale.getDefault(), "%.1f B/s", speed);
         else if (speed < 1024 * 1024) speedStr = String.format(Locale.getDefault(), "%.1f KB/s", speed / 1024.0);
         else speedStr = String.format(Locale.getDefault(), "%.1f MB/s", speed / (1024.0 * 1024.0));
-        String status = (fileTransferState.isFileSender ? "文件发送中" : "文件接收中")
+        String status = (isFileSender ? "文件发送中" : "文件接收中")
                 + ": " + progress + "% (" + speedStr + ")";
         if (getActivity() instanceof MainActivityNew) {
             ((MainActivityNew) getActivity()).setFileTransferStatus(status);
         }
-        fileTransferState.lastProgressBytes = transferredBytes;
-        fileTransferState.lastProgressTime = now;
+        lastProgressBytes = transferredBytes;
+        lastProgressTime = now;
     }
 
     @Override
@@ -972,66 +1081,52 @@ public class ChatWorkFragment extends Fragment implements
                 ((MainActivityNew) getActivity()).updateStatusDisplay();
             }
 
-            fileTransferState.lastProgressBytes = 0;
-            fileTransferState.lastProgressTime = 0;
+            lastProgressBytes = 0;
+            lastProgressTime = 0;
 
             if (success) {
-                if (fileTransferState.isFileSender) {
-                    // ---------- 发送方 ----------
-                    long elapsed = System.currentTimeMillis() - fileTransferState.transferStartTime;
-                    if (fileTransferState.pendingFileName.endsWith(".opus") || fileTransferState.pendingVoiceDuration > 0) {
-                        // 语音发送完成
-                        String speed = formatSpeed(fileTransferState.pendingFileSize, elapsed);
-                        Toast.makeText(getActivity(), "对方已收到语音 (" + speed + ")", Toast.LENGTH_LONG).show();
-                        addVoiceMessage(true, fileTransferState.localFilePath, voiceState.currentDuration);
+                if (isFileSender) {
+                    if (pendingFileName.endsWith(".opus") || pendingVoiceDuration > 0) {
+                        addVoiceMessage(true, localFilePath, currentVoiceDuration);
                     } else {
-                        // 普通文件
-                        if (elapsed > 0) {
-                            String speed = formatSpeed(fileTransferState.pendingFileSize, elapsed);
-                            Toast.makeText(getActivity(), "发送成功，平均速度: " + speed, Toast.LENGTH_LONG).show();
-                        } else {
-                            Toast.makeText(getActivity(), "发送成功", Toast.LENGTH_SHORT).show();
-                        }
-                        addFileMessage(true, fileTransferState.localFilePath,
-                                fileTransferState.pendingFileName, fileTransferState.pendingFileSize);
+                        addFileMessage(true, localFilePath, pendingFileName, pendingFileSize);
                     }
                 } else {
-                    // ---------- 接收方 ----------
-                    if (filePath == null || filePath.isEmpty()) {
-                        LogUtil.e(TAG, "接收完成但文件路径为空");
-                        Toast.makeText(getActivity(), "文件接收失败，路径无效", Toast.LENGTH_SHORT).show();
-                        fileTransferState.pendingReceiveFileName = null;
-                        resumeBluetoothService();
-                        return;
-                    }
-
                     File file = new File(filePath);
-                    if (fileTransferState.pendingVoiceDuration > 0) {
-                        // 语音接收完成
-                        Toast.makeText(getActivity(), "收到语音", Toast.LENGTH_SHORT).show();
-                        addVoiceMessage(false, filePath, fileTransferState.pendingVoiceDuration);
-                        fileTransferState.pendingVoiceDuration = 0;
+                    if (pendingVoiceDuration > 0) {
+                        addVoiceMessage(false, filePath, pendingVoiceDuration);
+                        pendingVoiceDuration = 0;
                     } else {
-                        // 普通文件
-                        long elapsed = System.currentTimeMillis() - fileTransferState.transferStartTime;
-                        String displayName = fileTransferState.pendingReceiveFileName != null ?
-                                fileTransferState.pendingReceiveFileName : file.getName();
-                        if (elapsed > 0) {
-                            String speed = formatSpeed(file.length(), elapsed);
-                            Toast.makeText(getActivity(), "接收成功，平均速度: " + speed, Toast.LENGTH_LONG).show();
-                        } else {
-                            Toast.makeText(getActivity(), "接收成功", Toast.LENGTH_SHORT).show();
-                        }
+                        String displayName = pendingReceiveFileName != null ?
+                                pendingReceiveFileName : file.getName();
                         addFileMessage(false, filePath, displayName, file.length());
-                        fileTransferState.pendingReceiveFileName = null;
+                        pendingReceiveFileName = null;
                     }
+                }
+
+                long fileSize = isFileSender ? pendingFileSize : new File(filePath).length();
+                long elapsed = System.currentTimeMillis() - transferStartTime;
+                if (elapsed > 0) {
+                    String speed = formatSpeed(fileSize, elapsed);
+                    Toast.makeText(getActivity(),
+                            (isFileSender ? "发送" : "接收") + "成功，平均速度: " + speed,
+                            Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(getActivity(),
+                            (isFileSender ? "发送" : "接收") + "成功",
+                            Toast.LENGTH_SHORT).show();
                 }
             } else {
                 Toast.makeText(getActivity(), "文件传输失败", Toast.LENGTH_SHORT).show();
-                if (fileTransferState.localFilePath != null) {
-                    new File(fileTransferState.localFilePath).delete();
-                    fileTransferState.localFilePath = null;
+                if (localFilePath != null) {
+                    new File(localFilePath).delete();
+                    localFilePath = null;
                 }
+            }
+
+            // 恢复自动扫描
+            if (getActivity() instanceof MainActivityNew) {
+                ((MainActivityNew) getActivity()).resumeAutoScan();
             }
 
             resumeBluetoothService();
@@ -1059,7 +1154,7 @@ public class ChatWorkFragment extends Fragment implements
     private void resumeBluetoothService() {
         if (serviceBound && bluetoothService != null) {
             if (bluetoothService.getState() == IBluetoothService.STATE_NONE) bluetoothService.start();
-            if (fileTransferState.isFileSender) {
+            if (isFileSender) {
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
                     if (adapter != null) {
@@ -1069,8 +1164,8 @@ public class ChatWorkFragment extends Fragment implements
                 }, 500);
             }
         }
-        fileTransferState.isFileSender = false;
-        fileTransferState.localFilePath = null;
+        isFileSender = false;
+        localFilePath = null;
         if (getActivity() instanceof MainActivityNew) {
             ((MainActivityNew) getActivity()).updateStatusDisplay();
         }
@@ -1105,7 +1200,6 @@ public class ChatWorkFragment extends Fragment implements
     private void handleIncomingMessage(String message, String deviceAddress) {
         String trimmed = message.trim();
 
-        // 呼叫控制
         if (trimmed.startsWith(IBluetoothService.CALL_REQUEST)) {
             String callerName = trimmed.substring(IBluetoothService.CALL_REQUEST.length());
             if (callerName.isEmpty()) callerName = "未知用户";
@@ -1128,7 +1222,6 @@ public class ChatWorkFragment extends Fragment implements
             return;
         }
 
-        // 文件请求
         if (trimmed.startsWith(IBluetoothService.FILE_REQUEST_PREFIX)) {
             if (processedMessages.contains(message)) {
                 LogUtil.d(TAG, "重复文件请求消息，已忽略");
@@ -1156,7 +1249,6 @@ public class ChatWorkFragment extends Fragment implements
             return;
         }
 
-        // 召唤消息
         if (trimmed.startsWith(IBluetoothService.CALL_PREFIX)) {
             String callerName = trimmed.substring(IBluetoothService.CALL_PREFIX.length());
             if (callerName.isEmpty()) callerName = "未知用户";
@@ -1164,11 +1256,9 @@ public class ChatWorkFragment extends Fragment implements
             return;
         }
 
-        // 文件接受/拒绝
         if (trimmed.equals(IBluetoothService.FILE_ACCEPT)) {
-            if (fileTransferState.isWaitingForAccept && fileTransferState.localFilePath != null
-                    && new File(fileTransferState.localFilePath).exists()) {
-                startFileSend(fileTransferState.localFilePath, fileTransferState.pendingFileName);
+            if (isWaitingForAccept && localFilePath != null && new File(localFilePath).exists()) {
+                startFileSend(localFilePath, pendingFileName);
             } else {
                 LogUtil.e(TAG, "文件不存在或等待状态异常");
                 Toast.makeText(getActivity(), "文件已丢失", Toast.LENGTH_SHORT).show();
@@ -1176,13 +1266,15 @@ public class ChatWorkFragment extends Fragment implements
             return;
         }
         if (trimmed.equals(IBluetoothService.FILE_REJECT)) {
-            fileTransferState.isWaitingForAccept = false;
-            fileTransferState.localFilePath = null;
+            isWaitingForAccept = false;
+            localFilePath = null;
             Toast.makeText(getActivity(), "对方拒绝了文件", Toast.LENGTH_SHORT).show();
+            if (getActivity() instanceof MainActivityNew) {
+                ((MainActivityNew) getActivity()).resumeAutoScan();
+            }
             return;
         }
 
-        // 普通文本（去重）
         boolean exists = false;
         long now = new Date().getTime();
         for (Message msg : messageList) {
@@ -1224,6 +1316,7 @@ public class ChatWorkFragment extends Fragment implements
                         doSendTextMessage(msg);
                         Toast.makeText(getActivity(), "重连成功，已发送消息", Toast.LENGTH_SHORT).show();
                     }
+                    checkAndSendExternalFile();
                     break;
                 case IBluetoothService.STATE_CONNECTING:
                     tvDeviceName.setText(displayName + " (连接中...)");
@@ -1243,7 +1336,13 @@ public class ChatWorkFragment extends Fragment implements
                 Fragment currentFragment = getActivity().getSupportFragmentManager()
                         .findFragmentById(R.id.fragment_container);
                 if (currentFragment instanceof TalkbackFragment) {
-                    // 已在对讲模式，忽略
+                    nonTextDataCount++;
+                    nonTextHandler.removeCallbacks(resetNonTextDataCount);
+                    if (nonTextDataCount >= 2) {
+                        switchToTalkbackFragment();
+                    } else {
+                        nonTextHandler.postDelayed(resetNonTextDataCount, 1000);
+                    }
                 } else {
                     Toast.makeText(getActivity(), "检测到对讲数据，自动切换至对讲模式", Toast.LENGTH_SHORT).show();
                     if (bluetoothService != null) {
@@ -1586,5 +1685,84 @@ public class ChatWorkFragment extends Fragment implements
         }
         if (TextUtils.isEmpty(fileName)) fileName = "file_" + System.currentTimeMillis();
         return fileName;
+    }
+
+    private void switchToTalkbackFragment() {
+        Toast.makeText(getActivity(), "检测到对讲连接，正在切换...", Toast.LENGTH_SHORT).show();
+        if (getActivity() instanceof MainActivityNew) {
+            ((MainActivityNew) getActivity()).switchToFragment("TalkbackFragment", deviceAddress, deviceName);
+        }
+    }
+
+    // ==================== 待发送消息池 ====================
+
+    private void addPendingMessage(int type, String content, String reason) {
+        PendingMessage msg = new PendingMessage(
+                type,
+                content,
+                deviceAddress,
+                deviceName != null ? deviceName : "未知设备",
+                reason
+        );
+        pendingManager.addMessage(msg);
+        Toast.makeText(getActivity(), "消息已加入待发送列表", Toast.LENGTH_SHORT).show();
+    }
+
+    public void sendPendingMessageDirectly(PendingMessage msg) {
+        if (msg.type == PendingMessage.TYPE_TEXT) {
+            if (isServiceReady()) {
+                doSendTextMessage(msg.content);
+                pendingManager.removeMessage(msg.id);
+                Toast.makeText(getActivity(), "文本已发送", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(getActivity(), "未连接，发送失败", Toast.LENGTH_SHORT).show();
+            }
+        } else if (msg.type == PendingMessage.TYPE_VOICE) {
+            File file = new File(msg.content);
+            if (!file.exists()) {
+                Toast.makeText(getActivity(), "语音文件不存在", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (!isServiceReady()) {
+                Toast.makeText(getActivity(), "未连接，发送失败", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            try {
+                byte[] data = new byte[(int) file.length()];
+                FileInputStream fis = new FileInputStream(file);
+                fis.read(data);
+                fis.close();
+                int duration = (int) (data.length / 640);
+                localFilePath = file.getAbsolutePath();
+                pendingFileName = file.getName();
+                pendingFileSize = data.length;
+                pendingVoiceDuration = duration;
+                currentVoiceDuration = duration;
+                isFileSender = true;
+                isWaitingForAccept = true;
+                // 暂停扫描
+                if (getActivity() instanceof MainActivityNew) {
+                    ((MainActivityNew) getActivity()).pauseAutoScan();
+                }
+                sendFileRequest(file.getName(), data.length, duration);
+            } catch (Exception e) {
+                LogUtil.e(TAG, "发送语音失败", e);
+                Toast.makeText(getActivity(), "语音发送失败", Toast.LENGTH_SHORT).show();
+                if (getActivity() instanceof MainActivityNew) {
+                    ((MainActivityNew) getActivity()).resumeAutoScan();
+                }
+            }
+        } else if (msg.type == PendingMessage.TYPE_FILE) {
+            Toast.makeText(getActivity(), "文件需手动发送", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    public void attemptSendPendingForDevice(String deviceAddress) {
+        List<PendingMessage> list = pendingManager.getMessagesForDevice(deviceAddress);
+        for (PendingMessage msg : list) {
+            if (msg.type == PendingMessage.TYPE_TEXT || msg.type == PendingMessage.TYPE_VOICE) {
+                sendPendingMessageDirectly(msg);
+            }
+        }
     }
 }
