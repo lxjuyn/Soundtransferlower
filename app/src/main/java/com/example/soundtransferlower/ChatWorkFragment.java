@@ -123,6 +123,7 @@ public class ChatWorkFragment extends Fragment implements
     private long lastProgressBytes = 0;
     private long lastProgressTime = 0;
     private int pendingVoiceDuration = 0;
+    private String pendingMsgId = null; // ★ 用于关联待发送消息池中的消息ID
 
     // ---------- 语音录音 ----------
     private VoiceRecorder voiceRecorder;
@@ -371,6 +372,7 @@ public class ChatWorkFragment extends Fragment implements
             pendingFileSize = externalFileSize;
             isFileSender = true;
             isWaitingForAccept = true;
+            pendingMsgId = null; // 外部文件不关联待发送池
             transferStartTime = System.currentTimeMillis();
             lastProgressBytes = 0;
             lastProgressTime = 0;
@@ -732,6 +734,7 @@ public class ChatWorkFragment extends Fragment implements
 
                 pendingFileName = fileName;
                 pendingFileSize = fileSize;
+                pendingMsgId = null; // 应用内文件不关联待发送池（除非从池中触发）
                 // 暂停自动扫描
                 if (getActivity() instanceof MainActivityNew) {
                     ((MainActivityNew) getActivity()).pauseAutoScan();
@@ -934,6 +937,7 @@ public class ChatWorkFragment extends Fragment implements
             pendingFileName = voiceFile.getName();
             pendingFileSize = data.length;
             currentVoiceDuration = duration;
+            pendingMsgId = null; // 直接发送的语音（非待发送池）不关联池
             // 暂停扫描
             if (getActivity() instanceof MainActivityNew) {
                 ((MainActivityNew) getActivity()).pauseAutoScan();
@@ -1086,12 +1090,27 @@ public class ChatWorkFragment extends Fragment implements
 
             if (success) {
                 if (isFileSender) {
-                    if (pendingFileName.endsWith(".opus") || pendingVoiceDuration > 0) {
+                    // ★ 发送方
+                    boolean isVoice = pendingFileName != null &&
+                            (pendingFileName.endsWith(".opus") || pendingVoiceDuration > 0);
+                    if (isVoice) {
                         addVoiceMessage(true, localFilePath, currentVoiceDuration);
+                        // ★★★ 关键修复：从待发送池移除语音消息 ★★★
+                        if (pendingMsgId != null) {
+                            pendingManager.removeMessage(pendingMsgId);
+                            pendingMsgId = null;
+                            LogUtil.d(TAG, "待发送语音已从池中移除: " + pendingMsgId);
+                        }
                     } else {
                         addFileMessage(true, localFilePath, pendingFileName, pendingFileSize);
+                        // 普通文件若来自待发送池（极少情况），也移除
+                        if (pendingMsgId != null) {
+                            pendingManager.removeMessage(pendingMsgId);
+                            pendingMsgId = null;
+                        }
                     }
                 } else {
+                    // ★ 接收方
                     File file = new File(filePath);
                     if (pendingVoiceDuration > 0) {
                         addVoiceMessage(false, filePath, pendingVoiceDuration);
@@ -1118,10 +1137,12 @@ public class ChatWorkFragment extends Fragment implements
                 }
             } else {
                 Toast.makeText(getActivity(), "文件传输失败", Toast.LENGTH_SHORT).show();
-                if (localFilePath != null) {
+                // 失败时，若来自待发送池（pendingMsgId != null），保留消息（不入池，等待重试）
+                // 但不清除本地文件（语音文件保留）
+                if (localFilePath != null && !pendingFileName.endsWith(".opus")) {
                     new File(localFilePath).delete();
-                    localFilePath = null;
                 }
+                localFilePath = null;
             }
 
             // 恢复自动扫描
@@ -1740,6 +1761,8 @@ public class ChatWorkFragment extends Fragment implements
                 currentVoiceDuration = duration;
                 isFileSender = true;
                 isWaitingForAccept = true;
+                // ★★★ 关键：关联待发送消息ID ★★★
+                pendingMsgId = msg.id;
                 // 暂停扫描
                 if (getActivity() instanceof MainActivityNew) {
                     ((MainActivityNew) getActivity()).pauseAutoScan();

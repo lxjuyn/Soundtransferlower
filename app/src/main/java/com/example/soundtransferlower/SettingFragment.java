@@ -53,7 +53,7 @@ public class SettingFragment extends Fragment {
 
         // ---- 自动探测开关 ----
         checkBoxAutoScan = new CheckBox(getActivity());
-        checkBoxAutoScan.setText("开启自动探测");
+        checkBoxAutoScan.setText("开启自动探测（可能降低文件传输速度）");
         checkBoxAutoScan.setChecked(prefs.getBoolean("auto_scan_enabled", false));
         layout.addView(checkBoxAutoScan);
 
