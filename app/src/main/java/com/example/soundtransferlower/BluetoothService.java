@@ -53,6 +53,13 @@ public class BluetoothService extends Service implements IBluetoothService {
     public static final String CALL_ACCEPT = "CALL_ACCEPT";
     public static final String CALL_REJECT = "CALL_REJECT";
     public static final String CALL_HANGUP = "CALL_HANGUP";
+    //==========确认============
+    // 在 BluetoothService 类中添加
+    private long confirmedTimestamp = 0;
+
+    public long getConfirmedTimestamp() {
+        return confirmedTimestamp;
+    }
 
     // ---------- Binder ----------
     public class LocalBinder extends Binder {
@@ -734,10 +741,14 @@ public class BluetoothService extends Service implements IBluetoothService {
                             String message = new String(buffer, TEXT_PREFIX_BYTES.length, bytes - TEXT_PREFIX_BYTES.length);
                             handleTextMessage(message);
                         } else {
+                            // 非文本数据
                             if (currentMode == MODE_TALKBACK) {
                                 byte[] audioData = new byte[bytes];
                                 System.arraycopy(buffer, 0, audioData, 0, bytes);
                                 notifyTalkbackDataReceived(audioData, socket.getRemoteDevice().getAddress());
+
+                                // ★★★ 发送语音确认消息 ★★★
+                                sendConfirmMessage(System.currentTimeMillis());
                             } else {
                                 LogUtil.w(TAG, "Received non-text data in chat mode");
                                 notifyNonTextDataReceived(socket.getRemoteDevice().getAddress());
@@ -751,10 +762,29 @@ public class BluetoothService extends Service implements IBluetoothService {
             }
         }
 
+        // ★★★ 新增方法：发送确认消息 ★★★
+        private void sendConfirmMessage(long timestamp) {
+            String confirmMsg = TEXT_PREFIX + "CONFIRM:" + timestamp;
+            write(confirmMsg.getBytes(), MODE_CHAT);
+        }
         private void handleTextMessage(String message) {
             String deviceAddress = socket.getRemoteDevice().getAddress();
             String trimmed = message.trim();
 
+            // ★★★ 1. 检测是否为确认消息 ★★★
+            if (trimmed.startsWith("CONFIRM:")) {
+                String tsStr = trimmed.substring("CONFIRM:".length());
+                try {
+                    long ts = Long.parseLong(tsStr);
+                    confirmedTimestamp = ts;
+                    notifyMessageConfirmed(ts);
+                } catch (NumberFormatException e) {
+                    LogUtil.e(TAG, "解析确认时间戳失败", e);
+                }
+                return; // 确认消息不进入后续处理
+            }
+
+            // 2. 呼叫控制消息
             if (trimmed.startsWith(CALL_REQUEST)) {
                 String callerName = trimmed.substring(CALL_REQUEST.length());
                 if (callerName.isEmpty()) callerName = "未知用户";
@@ -773,20 +803,30 @@ public class BluetoothService extends Service implements IBluetoothService {
                 notifyCallHungUp(deviceAddress);
                 return;
             }
+
+            // 3. 召唤消息
             if (trimmed.startsWith(CALL_PREFIX)) {
                 String callerName = trimmed.substring(CALL_PREFIX.length());
                 if (callerName.isEmpty()) callerName = "未知用户";
                 showCallNotification(callerName);
                 return;
             }
+
+            // 4. 文件控制消息
             if (trimmed.startsWith(FILE_REQUEST_PREFIX) ||
                     trimmed.equals(FILE_ACCEPT) ||
                     trimmed.equals(FILE_REJECT)) {
                 notifyMessageReceived(message, deviceAddress);
                 return;
             }
+
+            // 5. ★★★ 普通文本消息（需要发送确认） ★★★
             saveMessageToFile(message, deviceAddress, false);
             notifyMessageReceived(message, deviceAddress);
+
+            // 6. ★★★ 发送确认消息（携带当前时间戳） ★★★
+            String confirmMsg = TEXT_PREFIX + "CONFIRM:" + System.currentTimeMillis();
+            write(confirmMsg.getBytes());
         }
 
         private boolean isTextMessage(byte[] data, int length) {
@@ -810,7 +850,9 @@ public class BluetoothService extends Service implements IBluetoothService {
                     if (message.startsWith(TEXT_PREFIX)) {
                         message = message.substring(TEXT_PREFIX.length());
                     }
-                    if (!message.startsWith(CALL_REQUEST) && !message.startsWith(CALL_PREFIX) &&
+                    // ★★★ 过滤确认消息，不保存 ★★★
+                    if (!message.startsWith("CONFIRM:") &&
+                            !message.startsWith(CALL_REQUEST) && !message.startsWith(CALL_PREFIX) &&
                             !message.equals(CALL_ACCEPT) && !message.equals(CALL_REJECT) && !message.equals(CALL_HANGUP) &&
                             !message.startsWith(FILE_REQUEST_PREFIX) && !message.equals(FILE_ACCEPT) && !message.equals(FILE_REJECT)) {
                         saveMessageToFile(message, socket.getRemoteDevice().getAddress(), true);
@@ -820,7 +862,6 @@ public class BluetoothService extends Service implements IBluetoothService {
                 LogUtil.e(TAG, "Exception during write", e);
             }
         }
-
         public void cancel() {
             isRunning = false;
             try {
@@ -829,5 +870,13 @@ public class BluetoothService extends Service implements IBluetoothService {
                 LogUtil.e(TAG, "close() of connect socket failed", e);
             }
         }
+    }
+    //===========确认==============
+    private void notifyMessageConfirmed(long timestamp) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            for (IMessageCallback.MessageCallback callback : messageCallbacks) {
+                callback.onMessageConfirmed(timestamp);
+            }
+        });
     }
 }

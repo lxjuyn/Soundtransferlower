@@ -1,7 +1,6 @@
 package com.example.soundtransferlower;
 
 public interface IMessageCallback {
-    // ---------- 回调接口 ----------
     interface MessageCallback {
         void onMessageReceived(String message, String deviceAddress);
         void onConnectionStatusChanged(int state, String deviceName);
@@ -11,5 +10,8 @@ public interface IMessageCallback {
         void onCallAccepted(String deviceAddress);
         void onCallRejected(String deviceAddress);
         void onCallHungUp(String deviceAddress);
+
+        // ★★★ 新增：消息确认回调 ★★★
+        void onMessageConfirmed(long timestamp);
     }
 }
