@@ -85,12 +85,14 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
         View view = LayoutInflater.from(parent.getContext()).inflate(layoutRes, parent, false);
         // MD3 程序化样式：气泡背景与图标按 tag 应用（跟随配色主题）
         Md3Ui.applyTree(view);
-        return new ViewHolder(view, viewType);
+        return new ViewHolder(view);
     }
 
     @Override
     public void onBindViewHolder(ViewHolder holder, int position) {
         Message message = messages.get(position);
+
+        // 设置点击和长按监听
         holder.itemView.setOnLongClickListener(v -> {
             if (longClickListener != null) longClickListener.onMessageLongClick(message, position);
             return true;
@@ -99,13 +101,16 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
             if (clickListener != null) clickListener.onMessageClick(message, position);
         });
 
-        if (message.getTimestamp() != null) {
-            holder.tvTime.setText(timeFormat.format(message.getTimestamp()));
+        // ★★★ 安全设置时间（判空） ★★★
+        if (holder.tvTime != null) {
+            if (message.getTimestamp() != null) {
+                holder.tvTime.setText(timeFormat.format(message.getTimestamp()));
+            }
         }
 
         int type = message.getType();
 
-        // 先隐藏所有非通用视图（防御性编程）
+        // 先隐藏所有非通用视图（判空保护）
         if (holder.tvMessage != null) holder.tvMessage.setVisibility(View.GONE);
         if (holder.ivImage != null) holder.ivImage.setVisibility(View.GONE);
         if (holder.tvFileName != null) holder.tvFileName.setVisibility(View.GONE);
@@ -136,9 +141,10 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
             if (holder.ivVoiceIcon != null) {
                 holder.ivVoiceIcon.setVisibility(View.VISIBLE);
                 holder.ivVoiceIcon.setImageResource(R.drawable.ic_voice);
-               // holder.ivVoiceIcon.setOnClickListener(v -> {
-             //       if (voiceClickListener != null) voiceClickListener.onVoiceClick(message, position);
-              //  });
+                // 点击语音图标触发播放（可选）
+                holder.ivVoiceIcon.setOnClickListener(v -> {
+                    if (voiceClickListener != null) voiceClickListener.onVoiceClick(message, position);
+                });
             }
             if (holder.tvVoiceDuration != null) {
                 holder.tvVoiceDuration.setVisibility(View.VISIBLE);
@@ -146,6 +152,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
             }
         }
 
+        // ★★★ 安全设置发送者（判空） ★★★
         if (holder.tvSender != null) {
             holder.tvSender.setText(message.isSent() ? "我" : "对方");
         }
@@ -192,7 +199,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
         TextView tvMessage, tvTime, tvSender, tvFileName, tvFileSize, tvVoiceDuration;
         ImageView ivImage, ivVoiceIcon;
 
-        public ViewHolder(View itemView, int viewType) {
+        public ViewHolder(View itemView) {
             super(itemView);
             tvTime = itemView.findViewById(R.id.tvTime);
             tvMessage = itemView.findViewById(R.id.tvMessage);

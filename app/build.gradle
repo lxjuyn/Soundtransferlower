@@ -8,10 +8,11 @@ android {
 
     defaultConfig {
         applicationId 'com.am.papertape'
+        // 同步上游 3.0.0beta1 的功能，保留我们的现代化目标平台（AndroidX / minSdk 15 / targetSdk 34）
         minSdk 15
         targetSdk 34
-        versionCode 29
-        versionName "2.9.3fix"
+        versionCode 30
+        versionName "3.0.0beta1-md3"
         vectorDrawables.useSupportLibrary = true
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // 添加打包选项解决重复文件错误

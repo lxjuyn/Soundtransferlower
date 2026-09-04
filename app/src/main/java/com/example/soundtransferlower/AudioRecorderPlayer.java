@@ -89,9 +89,9 @@ public class AudioRecorderPlayer {
                     playBufferSize,
                     AudioTrack.MODE_STREAM);
 
-            Log.d(TAG, "音频初始化成功，播放缓冲区 = " + playBufferSize + " 字节");
+            LogUtil.d(TAG, "音频初始化成功，播放缓冲区 = " + playBufferSize + " 字节");
         } catch (Exception e) {
-            Log.e(TAG, "音频初始化失败: " + e.getMessage());
+            LogUtil.e(TAG, "音频初始化失败: " + e.getMessage());
         }
     }
 
@@ -105,9 +105,9 @@ public class AudioRecorderPlayer {
             // 优化：设置复杂度为5，平衡CPU使用和编码质量
             opusEncoder.setComplexity(5);
             opusDecoder = new OpusDecoder(SAMPLE_RATE, 1);
-            Log.d(TAG, "Opus 编解码器初始化成功 (16kHz, 24kbps, FEC enabled)");
+            LogUtil.d(TAG, "Opus 编解码器初始化成功 (16kHz, 24kbps, FEC enabled)");
         } catch (OpusException e) {
-            Log.e(TAG, "Opus 初始化失败: " + e.getMessage());
+            LogUtil.e(TAG, "Opus 初始化失败: " + e.getMessage());
         }
     }
 
@@ -126,11 +126,11 @@ public class AudioRecorderPlayer {
                     // 线程被中断，退出循环
                     break;
                 } catch (Exception e) {
-                    Log.e(TAG, "播放线程异常: " + e.getMessage());
+                    LogUtil.e(TAG, "播放线程异常: " + e.getMessage());
                     consecutiveErrors++;
                     // 优化：连续错误时添加短暂延迟，避免CPU空转
                     if (consecutiveErrors >= 5) {
-                        Log.w(TAG, "连续播放错误 " + consecutiveErrors + " 次，暂停500ms");
+                        LogUtil.w(TAG, "连续播放错误 " + consecutiveErrors + " 次，暂停500ms");
                         try {
                             Thread.sleep(500);
                         } catch (InterruptedException ie) {
@@ -140,7 +140,7 @@ public class AudioRecorderPlayer {
                     }
                 }
             }
-            Log.d(TAG, "播放线程退出");
+            LogUtil.d(TAG, "播放线程退出");
         });
         playThread.start();
     }
@@ -155,9 +155,9 @@ public class AudioRecorderPlayer {
             try {
                 audioTrack.play();
                 isPlaying = true;
-                Log.d(TAG, "音频播放已启动");
+                LogUtil.d(TAG, "音频播放已启动");
             } catch (IllegalStateException e) {
-                Log.e(TAG, "启动播放失败: " + e.getMessage());
+                LogUtil.e(TAG, "启动播放失败: " + e.getMessage());
                 return;
             }
         }
@@ -165,19 +165,19 @@ public class AudioRecorderPlayer {
         // 直接写入整帧（640 字节很小，不会阻塞太久）
         int written = audioTrack.write(pcmData, 0, pcmData.length);
         if (written != pcmData.length) {
-            Log.w(TAG, "写入不完全，期望 " + pcmData.length + " 实际 " + written);
+            LogUtil.w(TAG, "写入不完全，期望 " + pcmData.length + " 实际 " + written);
         }
     }
 
     public void startRecording() {
         if (audioRecord == null || isRecording || opusEncoder == null) return;
 
-        Log.d(TAG, "开始录音");
+        LogUtil.d(TAG, "开始录音");
         new Thread(() -> {
             try {
                 audioRecord.startRecording();
                 isRecording = true;
-                Log.d(TAG, "录音已启动");
+                LogUtil.d(TAG, "录音已启动");
 
                 byte[] pcmBuffer = new byte[PCM_BYTES_PER_FRAME];
                 short[] pcmShorts = new short[FRAME_SAMPLES];
@@ -205,16 +205,16 @@ public class AudioRecorderPlayer {
                         if (encodedBytes > 0) {
                             byte[] actualData = new byte[encodedBytes];
                             System.arraycopy(encodedBuffer, 0, actualData, 0, encodedBytes);
-                            Log.d(TAG, String.format("编码: PCM=%d 字节 -> Opus=%d 字节", totalRead, encodedBytes));
+                            LogUtil.d(TAG, String.format("编码: PCM=%d 字节 -> Opus=%d 字节", totalRead, encodedBytes));
                             audioDataSender.sendAudioData(actualData);
                         }
                     }
                 }
             } catch (Exception e) {
-                Log.e(TAG, "录制错误: " + e.getMessage());
+                LogUtil.e(TAG, "录制错误: " + e.getMessage());
             } finally {
                 stopRecordingInternal();
-                Log.d(TAG, "录音线程结束");
+                LogUtil.d(TAG, "录音线程结束");
             }
         }).start();
     }
@@ -227,9 +227,9 @@ public class AudioRecorderPlayer {
 
     private void stopRecordingInternal() {
         if (audioRecord != null && audioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
-            Log.d(TAG, "停止录音");
+            LogUtil.d(TAG, "停止录音");
             audioRecord.stop();
-            Log.d(TAG, "录音已停止");
+            LogUtil.d(TAG, "录音已停止");
         }
     }
 
@@ -247,7 +247,7 @@ public class AudioRecorderPlayer {
                 );
 
                 if (decodedSamples != FRAME_SAMPLES) {
-                    Log.w(TAG, "解码样本数异常: " + decodedSamples);
+                    LogUtil.w(TAG, "解码样本数异常: " + decodedSamples);
                     return;
                 }
 
@@ -258,18 +258,18 @@ public class AudioRecorderPlayer {
                         .asShortBuffer()
                         .put(pcmShorts);
 
-                Log.d(TAG, String.format("解码: Opus=%d 字节 -> PCM=%d 字节", length, PCM_BYTES_PER_FRAME));
+                LogUtil.d(TAG, String.format("解码: Opus=%d 字节 -> PCM=%d 字节", length, PCM_BYTES_PER_FRAME));
 
                 // 入队，若队列满则丢弃最旧帧（防止内存溢出和延迟累积）
                 if (!pcmQueue.offer(pcmBytes)) {
                     byte[] dropped = pcmQueue.poll();          // 丢弃队首
                     if (dropped != null) {
-                        Log.w(TAG, "播放队列满，丢弃一帧");
+                        LogUtil.w(TAG, "播放队列满，丢弃一帧");
                     }
                     pcmQueue.offer(pcmBytes); // 再入队
                 }
             } catch (Exception e) {
-                Log.e(TAG, "解码错误: " + e.getMessage());
+                LogUtil.e(TAG, "解码错误: " + e.getMessage());
             }
         });
     }
@@ -310,6 +310,6 @@ public class AudioRecorderPlayer {
         opusEncoder = null;
         opusDecoder = null;
 
-        Log.d(TAG, "音频资源已释放");
+        LogUtil.d(TAG, "音频资源已释放");
     }
 }

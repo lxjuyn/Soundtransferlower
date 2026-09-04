@@ -1,6 +1,10 @@
 package com.example.soundtransferlower;
 
 import android.annotation.SuppressLint;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -11,26 +15,26 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.res.AssetFileDescriptor;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.Message;
 import android.os.IBinder;
-import android.os.Looper;
+import android.provider.MediaStore;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentManager;
-import androidx.fragment.app.FragmentTransaction;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.appcompat.widget.PopupMenu;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -41,124 +45,127 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.lang.ref.WeakReference;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-public class MainActivityNew extends FragmentActivity implements BluetoothService.MessageCallback {
-    private static final int REQUEST_PERMISSIONS = 1001;
-    private ImageButton btnBack;
-    private ImageButton btnMenu;
-    private BluetoothFinder bluetoothFinder;
-    private boolean isFirstLaunch = true;
-    private static class SafeHandler extends Handler {
-        private final WeakReference<MainActivityNew> activityRef;
-
-        SafeHandler(MainActivityNew activity) {
-            super(Looper.getMainLooper());
-            activityRef = new WeakReference<>(activity);
-        }
-
-        @Override
-        public void handleMessage(Message msg) {
-            MainActivityNew activity = activityRef.get();
-            if (activity == null) return;
-        }
-    }
-
-    private Handler handler = new SafeHandler(this);
-    private AlertDialog deviceSelectionDialog;
-    private ArrayAdapter<String> deviceAdapter;
-    private List<BluetoothDevice> availableDevices = new ArrayList<>();
-    private List<String> deviceNames = new ArrayList<>();
-    private TextView mainStatus;
-    private TextView emptyHint;
+public class MainActivityNew extends FragmentActivity implements IMessageCallback.MessageCallback {
 
     private static final String TAG = "MainActivityNew";
-    private BluetoothAdapter bluetoothAdapter;
-    private List<BluetoothDevice> pairedDevices = new ArrayList<>();
-    private boolean isSpeakerMode = false;
+    private static final long CALL_TIMEOUT_MS = 10000;
+    private static final long RECONNECT_DELAY_MS = 2000;
+    private static final int DISCOVERABLE_DURATION = 300;
+    private static final long CONNECT_TIMEOUT_MS = 15000;
+    private static final int MAX_CONNECT_RETRIES = 3;
+    private static final long CONNECT_RETRY_DELAY = 5000;
 
-    private BluetoothService bluetoothService;
+    // ---------- 扫描前自身可见性检查 ----------
+    private long lastDiscoverableRequestTime = 0;
+    private static final long DISCOVERABLE_REQUEST_INTERVAL = 300 * 1000; // 300秒
+
+    // ---------- 外部文件分享（实例变量） ----------
+    private String pendingShareFile = null;
+    private String pendingShareFileName = null;
+    private long pendingShareFileSize = 0;
+
+    // ---------- UI ----------
+    private TextView mainStatus;
+    private TextView emptyHint;
+    private ImageButton btnBack;
+    private ImageButton btnMenu;
+
+    // ---------- 蓝牙服务 ----------
+    private IBluetoothService bluetoothService;
     private boolean serviceBound = false;
+    private BluetoothAdapter bluetoothAdapter;
+    private BluetoothFinder bluetoothFinder;
 
-    private int currentConnectionState = BluetoothService.STATE_NONE;
+    // ---------- 连接状态 ----------
+    private int currentConnectionState = IBluetoothService.STATE_NONE;
     private String connectedDeviceName = "";
-    private int currentMode = BluetoothService.MODE_CHAT;
     private String connectedDeviceAddress = "";
-    private boolean isReceiverRegistered = false;
+    private int currentMode = IBluetoothService.MODE_CHAT;
 
-    private boolean isFileTransferring = false;
+    // ---------- Fragment 管理 ----------
     private boolean isFromNotification = false;
     private String pendingFragmentType;
     private String pendingDeviceAddress;
     private String pendingDeviceName;
-    private boolean discoverableRequested = false;
 
-    // 通话相关
-    private boolean isInCall = false;
-    private String callTargetAddress;
-    private String callTargetName;
-    private long callStartTime;
-    private Handler callTimerHandler = new SafeHandler(this);
-    private Runnable callTimerRunnable;
-    private Fragment callFragment;
-    private AudioRecorderPlayer callAudioRecorder;
+    // ---------- 通话管理 ----------
+    private final CallManager callManager = new CallManager();
 
-    // 召唤相关
-    private boolean isCallNotification = false;
-    private String callDeviceAddress;
-    private String callDeviceName;
-    private String callCallerName;
+    // ---------- 设备选择 ----------
+    private final DeviceSelector deviceSelector = new DeviceSelector();
 
-    public void setFileTransferring(boolean transferring) {
-        this.isFileTransferring = transferring;
-    }
+    // ---------- 文件传输 ----------
+    private boolean isFileTransferring = false;
 
-    public void setFileTransferStatus(String status) {
-        runOnUiThread(() -> {
-            if (mainStatus != null) {
-                mainStatus.setText(status);
+    // ---------- 自动扫描 ----------
+    private AutoDeviceScanner autoDeviceScanner;
+
+    // ---------- 可被发现请求 ----------
+    private boolean requestDiscoverableEnabled = false;
+    private boolean pendingDiscoverableRequest = false;
+    private Handler discoverableHandler = new Handler();
+    private Runnable discoverableRunnable;
+
+    // ---------- 待发送消息连接管理 ----------
+    private PendingMessage pendingSendAfterConnect = null;
+    private int pendingConnectRetryCount = 0;
+    private Handler connectTimeoutHandler = new Handler();
+    private Runnable connectTimeoutRunnable;
+
+    // ---------- Handler ----------
+    private final Handler handler = new Handler();
+
+    // ---------- 广播接收器 ----------
+    private boolean isReceiverRegistered = false;
+    private final BroadcastReceiver deviceDiscoveryReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (BluetoothDevice.ACTION_FOUND.equals(intent.getAction())) {
+                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                deviceSelector.onDeviceFound(device);
             }
-        });
-    }
+        }
+    };
 
-    // ==================== Fragment 查询连接状态的方法 ====================
-    /**
-     * 查询当前蓝牙是否已连接
-     */
-    public boolean isBluetoothConnected() {
-        return currentConnectionState == BluetoothService.STATE_CONNECTED;
-    }
+    // ---------- ServiceConnection ----------
+    private final ServiceConnection serviceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            BluetoothService.LocalBinder binder = (BluetoothService.LocalBinder) service;
+            bluetoothService = binder.getInterface();
+            bluetoothService.registerCallback(MainActivityNew.this);
+            serviceBound = true;
 
-    /**
-     * 获取当前已连接设备的名称
-     */
-    public String getConnectedDeviceName() {
-        return connectedDeviceName;
-    }
+            if (isFromNotification) {
+                handleNotificationIntent();
+                return;
+            }
 
-    /**
-     * 获取当前已连接设备的地址
-     */
-    public String getConnectedDeviceAddress() {
-        return connectedDeviceAddress;
-    }
+            bluetoothService.start();
+            onConnectionStatusChanged(bluetoothService.getState(), "");
+        }
 
-    /**
-     * 获取当前连接状态
-     */
-    public int getCurrentConnectionState() {
-        return currentConnectionState;
-    }
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            serviceBound = false;
+        }
+    };
+
+    // ==================== 生命周期 ====================
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -168,35 +175,119 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main_new);
 
-        // 请求蓝牙和位置权限
+        SharedPreferences prefs = getSharedPreferences("settings", Context.MODE_PRIVATE);
+        LogUtil.setEnableLog(prefs.getBoolean("enable_log", false));
+
+        // 运行时权限（targetSdk 34 必须）：蓝牙 12+ 与位置权限
         requestBluetoothAndLocationPermissions();
 
-        Intent intent = getIntent();
-        if (intent != null) {
-            if (intent.hasExtra("LOAD_FRAGMENT")) {
-                isFromNotification = true;
-                isFirstLaunch = false;
-                pendingFragmentType = intent.getStringExtra("LOAD_FRAGMENT");
-                pendingDeviceAddress = intent.getStringExtra("DEVICE_ADDRESS");
-                pendingDeviceName = intent.getStringExtra("DEVICE_NAME");
-                if (intent.getBooleanExtra("IS_CALL", false)) {
-                    isCallNotification = true;
-                    callDeviceAddress = pendingDeviceAddress;
-                    callDeviceName = pendingDeviceName;
-                    callCallerName = pendingDeviceName;
+        // 初始化自动扫描器
+        autoDeviceScanner = new AutoDeviceScanner(this);
+        boolean autoScan = prefs.getBoolean("auto_scan_enabled", false);
+        int interval = prefs.getInt("auto_scan_interval", 60);
+        autoDeviceScanner.setScanInterval(interval);
+        autoDeviceScanner.setEnabled(autoScan);
+
+        // 扫描开始监听：检查自身可见性
+        autoDeviceScanner.addScanStartListener(new AutoDeviceScanner.OnScanStartListener() {
+            @Override
+            public void onScanStart() {
+                checkAndRequestDiscoverable();
+            }
+        });
+
+        initDiscoverableSettings();
+
+        parseIntentExtras();
+        initUI();
+        initBluetooth();
+        bindService();
+        setupBottomNavigation();
+        loadDefaultFragment();
+
+        getSupportFragmentManager().addOnBackStackChangedListener(this::updateEmptyHintVisibility);
+
+        // 自动扫描监听：仅处理文本消息（语音由 ChatWorkFragment 处理）
+        autoDeviceScanner.addListener(new AutoDeviceScanner.DeviceScanListener() {
+            @Override
+            public void onDeviceDetected(BluetoothDevice device) {
+                if (device == null) return;
+                List<PendingMessage> list = PendingMessageManager.getInstance(MainActivityNew.this)
+                        .getMessagesForDevice(device.getAddress());
+                for (PendingMessage msg : list) {
+                    if (msg.type == PendingMessage.TYPE_TEXT) {
+                        sendPendingMessage(msg);
+                    }
+                    // 语音不自动发送，由连接成功后 ChatWorkFragment 处理
                 }
             }
+        });
+
+        // 处理外部文件分享
+        handleShareIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleShareIntent(intent);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (pendingDiscoverableRequest) {
+            pendingDiscoverableRequest = false;
+            if (bluetoothAdapter != null && bluetoothAdapter.isEnabled()) {
+                requestDiscoverable();
+            }
         }
+        if (requestDiscoverableEnabled) {
+            startDiscoverableLoop();
+        }
+    }
 
-        mainStatus = findViewById(R.id.mainStatus);
-        emptyHint = findViewById(R.id.emptyHint);
-        updateStatusDisplay();
-        updateEmptyHintVisibility();
+    @Override
+    protected void onPause() {
+        super.onPause();
+    }
 
-        bluetoothFinder = new BluetoothFinder(this);
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (autoDeviceScanner != null) {
+            autoDeviceScanner.release();
+            autoDeviceScanner = null;
+        }
+        stopDiscoverableLoop();
+        callManager.release();
+        unbindServiceIfNeeded();
+        stopBluetoothScan();
+        safeUnregisterReceiver();
+        handler.removeCallbacksAndMessages(null);
+        connectTimeoutHandler.removeCallbacksAndMessages(null);
+        dismissDeviceDialog();
+        clearPendingShare();
+    }
 
+    // ==================== 初始化 ====================
+
+    private void parseIntentExtras() {
+        Intent intent = getIntent();
+        if (intent != null && intent.hasExtra("LOAD_FRAGMENT")) {
+            isFromNotification = true;
+            pendingFragmentType = intent.getStringExtra("LOAD_FRAGMENT");
+            pendingDeviceAddress = intent.getStringExtra("DEVICE_ADDRESS");
+            pendingDeviceName = intent.getStringExtra("DEVICE_NAME");
+        }
+    }
+
+    private void initUI() {
         btnBack = findViewById(R.id.btnBack);
         btnMenu = findViewById(R.id.btnMenu);
+        mainStatus = findViewById(R.id.mainStatus);
+        emptyHint = findViewById(R.id.emptyHint);
 
         btnBack.setOnClickListener(v -> {
             if (getSupportFragmentManager().getBackStackEntryCount() > 0) {
@@ -207,49 +298,30 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             }
         });
 
-        btnMenu.setOnClickListener(v -> showPopupMenu(v));
+        btnMenu.setOnClickListener(this::showPopupMenu);
 
+        updateStatusDisplay();
+        updateEmptyHintVisibility();
+    }
+
+    private void initBluetooth() {
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (bluetoothAdapter == null) {
             Toast.makeText(this, "蓝牙不可用", Toast.LENGTH_SHORT).show();
             finish();
+            return;
         }
+        bluetoothFinder = new BluetoothFinder(this);
+        refreshPairedDevices();
+    }
 
+    private void bindService() {
         Intent serviceIntent = new Intent(this, BluetoothService.class);
-        // Android 8.0 (API 26) 起后台限制：使用 startForegroundService() 替代 startService()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent);
-        } else {
-            startService(serviceIntent);
-        }
+        startService(serviceIntent);
         bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE);
+    }
 
-        if (isFromNotification) {
-            // 等待服务绑定
-        } else {
-            // ★★★ 启动时不再弹出设备选择对话框 ★★★
-            handler.postDelayed(() -> {
-                if (isFirstLaunch && serviceBound) {
-                    // 检查是否有已连接设备，若有则跳转
-                    if (bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
-                        String address = bluetoothService.getConnectedDeviceAddress();
-                        String name = bluetoothService.getConnectedDeviceName();
-                        if (address != null && name != null) {
-                            switchToFragment("ChatWorkFragment", address, name);
-                            isFirstLaunch = false;
-                            return;
-                        }
-                    }
-                    // 未连接则直接加载聊天界面，不弹窗
-                    loadFragment(new ChatWorkFragment());
-                    currentConnectionState = BluetoothService.STATE_NONE;
-                    updateStatusDisplay();
-                    isFirstLaunch = false;
-                }
-            }, 1000);
-        }
-
-        // 底部按钮
+    private void setupBottomNavigation() {
         Button btnTalkback = findViewById(R.id.btnTalkback);
         Button btnChat = findViewById(R.id.btnChat);
         Button btnMine = findViewById(R.id.btnMine);
@@ -257,7 +329,7 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         btnTalkback.setOnClickListener(v -> {
             clearBackStack();
             loadFragment(new TalkbackFragment());
-            currentMode = BluetoothService.MODE_TALKBACK;
+            currentMode = IBluetoothService.MODE_TALKBACK;
             updateStatusDisplay();
             updateNavStyles(R.id.btnTalkback);
         });
@@ -265,7 +337,7 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         btnChat.setOnClickListener(v -> {
             clearBackStack();
             loadFragment(new ChatFragment());
-            currentMode = BluetoothService.MODE_CHAT;
+            currentMode = IBluetoothService.MODE_CHAT;
             updateStatusDisplay();
             updateNavStyles(R.id.btnChat);
         });
@@ -279,10 +351,42 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
 
         // 初始默认聊天页
         updateNavStyles(R.id.btnChat);
+    }
 
-        getSupportFragmentManager().addOnBackStackChangedListener(() -> {
-            updateEmptyHintVisibility();
-        });
+    /**
+     * 运行时权限申请（Android 12+ 蓝牙需运行时申请，否则 12+ 机型扫描/连接直接 crash）
+     */
+    private static final int REQUEST_PERMISSIONS = 100;
+
+    private void requestBluetoothAndLocationPermissions() {
+        String[] permissions;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            permissions = new String[]{
+                    android.Manifest.permission.BLUETOOTH_CONNECT,
+                    android.Manifest.permission.BLUETOOTH_SCAN
+            };
+        } else {
+            permissions = new String[]{
+                    android.Manifest.permission.BLUETOOTH,
+                    android.Manifest.permission.BLUETOOTH_ADMIN,
+                    android.Manifest.permission.ACCESS_FINE_LOCATION
+            };
+        }
+        java.util.List<String> denied = PermissionHelper.getDeniedPermissions(this, permissions);
+        if (!denied.isEmpty()) {
+            PermissionHelper.requestPermissions(this, denied.toArray(new String[0]), REQUEST_PERMISSIONS);
+        }
+    }
+
+    /** 供设置页等 UI 查询当前连接状态 */
+    public boolean isBluetoothConnected() {
+        return bluetoothService != null && bluetoothService.getState() == IBluetoothService.STATE_CONNECTED;
+    }
+
+    public String getConnectedDeviceName() {
+        if (bluetoothService == null) return null;
+        String name = bluetoothService.getConnectedDeviceName();
+        return (name == null || name.isEmpty()) ? bluetoothService.getConnectedDeviceAddress() : name;
     }
 
     /** 底部导航选中态：选中项主色加粗，其余回落 onSurfaceVariant */
@@ -299,6 +403,64 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         }
     }
 
+    private void loadDefaultFragment() {
+        if (isFromNotification) return;
+
+        handler.postDelayed(() -> {
+            if (!isFirstLaunch() || !serviceBound) return;
+            if (bluetoothService != null && bluetoothService.getState() == IBluetoothService.STATE_CONNECTED) {
+                String addr = bluetoothService.getConnectedDeviceAddress();
+                String name = bluetoothService.getConnectedDeviceName();
+                if (addr != null && name != null) {
+                    switchToFragment("ChatWorkFragment", addr, name);
+                    return;
+                }
+            }
+            loadFragment(new ChatWorkFragment());
+            currentConnectionState = IBluetoothService.STATE_NONE;
+            updateStatusDisplay();
+        }, 1000);
+    }
+
+    private void handleNotificationIntent() {
+        switchToFragment(pendingFragmentType, pendingDeviceAddress, pendingDeviceName);
+        if (bluetoothService != null && bluetoothService.getState() == IBluetoothService.STATE_CONNECTED) {
+            String name = bluetoothService.getConnectedDeviceName();
+            if (name != null && !name.isEmpty()) connectedDeviceName = name;
+            else connectedDeviceName = pendingDeviceName;
+            updateStatusDisplay();
+        }
+        clearPendingNotification();
+    }
+
+    private void clearPendingNotification() {
+        pendingFragmentType = null;
+        pendingDeviceAddress = null;
+        pendingDeviceName = null;
+        isFromNotification = false;
+    }
+
+    // ==================== 状态更新 ====================
+
+    public void updateStatusDisplay() {
+        runOnUiThread(() -> {
+            if (mainStatus == null) return;
+            String status;
+            if (callManager.isInCall()) {
+                status = "通话中: " + callManager.getTargetName();
+            } else {
+                switch (currentConnectionState) {
+                    case IBluetoothService.STATE_NONE: status = "未连接"; break;
+                    case IBluetoothService.STATE_LISTEN: status = "等待连接..."; break;
+                    case IBluetoothService.STATE_CONNECTING: status = "连接中..."; break;
+                    case IBluetoothService.STATE_CONNECTED: status = "已连接: " + connectedDeviceName; break;
+                    default: status = "";
+                }
+            }
+            mainStatus.setText(status);
+        });
+    }
+
     private void updateEmptyHintVisibility() {
         if (getSupportFragmentManager().getBackStackEntryCount() == 0) {
             emptyHint.setVisibility(View.VISIBLE);
@@ -307,129 +469,548 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         }
     }
 
-    /**
-     * 请求蓝牙和位置权限
-     */
-    private void requestBluetoothAndLocationPermissions() {
-        String[] permissions;
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            // Android 12 (API 31) 及以上
-            permissions = new String[]{
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-                android.Manifest.permission.BLUETOOTH_SCAN
-            };
+    private boolean isFirstLaunch() {
+        return getSupportFragmentManager().getBackStackEntryCount() == 0;
+    }
+
+    // ==================== Fragment 管理（安全版本） ====================
+
+    private void loadFragment(Fragment fragment) {
+        if (isFinishing() || isDestroyed()) return;
+        getSupportFragmentManager().beginTransaction()
+                .replace(R.id.fragment_container, fragment)
+                .addToBackStack(null)
+                .commitAllowingStateLoss();
+        updateEmptyHintVisibility();
+    }
+
+    private void clearBackStack() {
+        if (isFinishing() || isDestroyed()) return;
+        FragmentManager fm = getSupportFragmentManager();
+        if (fm.getBackStackEntryCount() > 0) {
+            FragmentManager.BackStackEntry first = fm.getBackStackEntryAt(0);
+            fm.popBackStack(first.getId(), FragmentManager.POP_BACK_STACK_INCLUSIVE);
+        }
+        updateEmptyHintVisibility();
+    }
+
+    public void switchToFragment(String fragmentType, String deviceAddress, String deviceName) {
+        if (isFinishing() || isDestroyed()) {
+            handler.post(() -> doSwitchToFragment(fragmentType, deviceAddress, deviceName));
+            return;
+        }
+        doSwitchToFragment(fragmentType, deviceAddress, deviceName);
+    }
+
+    private void doSwitchToFragment(String fragmentType, String deviceAddress, String deviceName) {
+        if (isFinishing() || isDestroyed()) return;
+        Fragment fragment = null;
+        if ("TalkbackFragment".equals(fragmentType)) {
+            fragment = new TalkbackFragment();
+            currentMode = IBluetoothService.MODE_TALKBACK;
+            if (bluetoothService != null) bluetoothService.setMode(IBluetoothService.MODE_TALKBACK);
+        } else if ("ChatWorkFragment".equals(fragmentType)) {
+            fragment = new ChatWorkFragment();
+            currentMode = IBluetoothService.MODE_CHAT;
+            if (bluetoothService != null) bluetoothService.setMode(IBluetoothService.MODE_CHAT);
+        }
+        if (fragment == null) return;
+
+        Bundle args = new Bundle();
+        args.putString("DEVICE_ADDRESS", deviceAddress);
+        args.putString("DEVICE_NAME", deviceName);
+        // 如果有待分享文件，一并传递
+        if (pendingShareFile != null) {
+            args.putString("EXTERNAL_FILE_PATH", pendingShareFile);
+            args.putString("EXTERNAL_FILE_NAME", pendingShareFileName);
+            args.putLong("EXTERNAL_FILE_SIZE", pendingShareFileSize);
+            // 清除实例变量（文件信息已存入 args）
+            clearPendingShare();
+        }
+        fragment.setArguments(args);
+
+        clearBackStack();
+        loadFragment(fragment);
+
+        if (bluetoothService != null && bluetoothService.getState() == IBluetoothService.STATE_CONNECTED) {
+            currentConnectionState = IBluetoothService.STATE_CONNECTED;
+            String name = bluetoothService.getConnectedDeviceName();
+            connectedDeviceName = (name != null && !name.isEmpty()) ? name : deviceName;
         } else {
-            // Android 11 及以下
-            permissions = new String[]{
-                android.Manifest.permission.BLUETOOTH,
-                android.Manifest.permission.BLUETOOTH_ADMIN,
-                android.Manifest.permission.ACCESS_FINE_LOCATION
-            };
+            currentConnectionState = IBluetoothService.STATE_CONNECTING;
+            connectedDeviceName = deviceName;
+        }
+        updateStatusDisplay();
+    }
+
+    // ==================== 蓝牙设备操作 ====================
+
+    @SuppressLint("MissingPermission")
+    public void refreshPairedDevices() {
+        if (bluetoothAdapter == null) return;
+        Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
+        pairedDevices.clear();
+        pairedDevices.addAll(devices);
+        LogUtil.d(TAG, "刷新设备列表，数量: " + pairedDevices.size());
+    }
+
+    public List<BluetoothDevice> getPairedDevices() {
+        return pairedDevices;
+    }
+
+    public void connectToDeviceForChat(BluetoothDevice device) {
+        String currentAddress = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+        if (currentAddress != null && currentAddress.equals(device.getAddress())) {
+            ChatWorkFragment f = new ChatWorkFragment();
+            Bundle args = new Bundle();
+            args.putString("DEVICE_ADDRESS", device.getAddress());
+            args.putString("DEVICE_NAME", device.getName());
+            f.setArguments(args);
+            clearBackStack();
+            loadFragment(f);
+            updateStatusDisplay();
+            return;
         }
 
-        List<String> deniedPermissions = PermissionHelper.getDeniedPermissions(this, permissions);
-        if (!deniedPermissions.isEmpty()) {
-            PermissionHelper.requestPermissions(this, deniedPermissions.toArray(new String[0]), REQUEST_PERMISSIONS);
+        if (!serviceBound || bluetoothService == null) {
+            Toast.makeText(this, "蓝牙服务未就绪", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        bluetoothService.setMode(IBluetoothService.MODE_CHAT);
+        currentMode = IBluetoothService.MODE_CHAT;
+
+        String localAddress = bluetoothAdapter.getAddress();
+        String remoteAddress = device.getAddress();
+        boolean isInitiator = localAddress.compareTo(remoteAddress) > 0;
+        bluetoothService.setConnectionRole(isInitiator, remoteAddress);
+
+        Toast.makeText(this,
+                isInitiator ? "正在连接 " + device.getName() : "等待 " + device.getName() + " 连接",
+                Toast.LENGTH_SHORT).show();
+
+        connectedDeviceName = device.getName();
+        connectedDeviceAddress = device.getAddress();
+        currentConnectionState = IBluetoothService.STATE_CONNECTING;
+        updateStatusDisplay();
+
+        ChatWorkFragment f = new ChatWorkFragment();
+        Bundle args = new Bundle();
+        args.putString("DEVICE_ADDRESS", device.getAddress());
+        args.putString("DEVICE_NAME", device.getName());
+        f.setArguments(args);
+        clearBackStack();
+        loadFragment(f);
+    }
+
+    // ==================== 待发送消息发送（含防呆重试） ====================
+
+    private void cancelPendingConnect() {
+        if (connectTimeoutRunnable != null) {
+            connectTimeoutHandler.removeCallbacks(connectTimeoutRunnable);
+            connectTimeoutRunnable = null;
+        }
+        pendingSendAfterConnect = null;
+        pendingConnectRetryCount = 0;
+    }
+
+    public void sendPendingMessage(PendingMessage msg) {
+        if (msg == null || bluetoothService == null || !serviceBound) {
+            Toast.makeText(this, "服务未就绪", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String targetAddress = msg.targetDeviceAddress;
+        if (targetAddress == null || targetAddress.isEmpty()) {
+            Toast.makeText(this, "目标地址无效", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        cancelPendingConnect();
+
+        int state = bluetoothService.getState();
+        String currentAddress = bluetoothService.getConnectedDeviceAddress();
+
+        if (state == IBluetoothService.STATE_CONNECTED && targetAddress.equals(currentAddress)) {
+            handleConnectedMessage(msg);
+        } else {
+            pendingSendAfterConnect = msg;
+            pendingConnectRetryCount = 0;
+            attemptConnectAndSend();
         }
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQUEST_PERMISSIONS) {
-            // 权限已请求，可以继续执行需要权限的操作
-            for (int i = 0; i < permissions.length; i++) {
-                if (grantResults[i] == PackageManager.PERMISSION_GRANTED) {
-                    Log.d(TAG, "权限已授予: " + permissions[i]);
-                } else {
-                    Log.w(TAG, "权限被拒绝: " + permissions[i]);
-                    Toast.makeText(this, "需要 " + permissions[i] + " 权限才能正常使用", Toast.LENGTH_SHORT).show();
-                }
+    private void attemptConnectAndSend() {
+        if (pendingSendAfterConnect == null || bluetoothService == null) return;
+
+        int state = bluetoothService.getState();
+        String currentAddr = bluetoothService.getConnectedDeviceAddress();
+        String targetAddr = pendingSendAfterConnect.targetDeviceAddress;
+
+        if (state == IBluetoothService.STATE_CONNECTED && targetAddr != null && targetAddr.equals(currentAddr)) {
+            handleConnectedMessage(pendingSendAfterConnect);
+            pendingSendAfterConnect = null;
+            pendingConnectRetryCount = 0;
+            if (connectTimeoutRunnable != null) {
+                connectTimeoutHandler.removeCallbacks(connectTimeoutRunnable);
+                connectTimeoutRunnable = null;
             }
+            return;
         }
+
+        if (state == IBluetoothService.STATE_CONNECTING) {
+            LogUtil.d(TAG, "已处于连接中，等待回调");
+            return;
+        }
+
+        if (pendingConnectRetryCount >= MAX_CONNECT_RETRIES) {
+            Toast.makeText(this, "重连" + MAX_CONNECT_RETRIES + "次失败，请稍后重试", Toast.LENGTH_LONG).show();
+            pendingSendAfterConnect = null;
+            pendingConnectRetryCount = 0;
+            return;
+        }
+
+        pendingConnectRetryCount++;
+        Toast.makeText(this, "第" + pendingConnectRetryCount + "次尝试连接 " + pendingSendAfterConnect.targetDeviceName,
+                Toast.LENGTH_SHORT).show();
+
+        // 发起连接（无需提前 stop，setConnectionRole 内部会处理）
+        bluetoothService.setConnectionRole(true, targetAddr);
+
+        if (connectTimeoutRunnable != null) {
+            connectTimeoutHandler.removeCallbacks(connectTimeoutRunnable);
+        }
+        connectTimeoutRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (pendingSendAfterConnect == null) return;
+                int currentState = bluetoothService != null ? bluetoothService.getState() : IBluetoothService.STATE_NONE;
+                String connectedAddr = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+                if (currentState == IBluetoothService.STATE_CONNECTED &&
+                        connectedAddr != null && connectedAddr.equals(pendingSendAfterConnect.targetDeviceAddress)) {
+                    handleConnectedMessage(pendingSendAfterConnect);
+                    pendingSendAfterConnect = null;
+                    pendingConnectRetryCount = 0;
+                    return;
+                }
+                LogUtil.d(TAG, "连接超时，准备重试");
+                if (bluetoothService != null) {
+                    bluetoothService.stop();
+                }
+                handler.postDelayed(() -> attemptConnectAndSend(), CONNECT_RETRY_DELAY);
+            }
+        };
+        connectTimeoutHandler.postDelayed(connectTimeoutRunnable, CONNECT_TIMEOUT_MS);
     }
 
-    public void updateStatusDisplay() {
-        runOnUiThread(() -> {
-            if (mainStatus == null) return;
-            String statusText = "";
-            if (isInCall) {
-                statusText = "通话中: " + callTargetName;
+    private void handleConnectedMessage(PendingMessage msg) {
+        if (msg.type == PendingMessage.TYPE_TEXT) {
+            try {
+                String prefixed = IBluetoothService.TEXT_PREFIX + msg.content;
+                bluetoothService.write(prefixed.getBytes());
+                PendingMessageManager.getInstance(this).removeMessage(msg.id);
+                Toast.makeText(this, "文本已发送", Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                LogUtil.e(TAG, "发送文本异常", e);
+                Toast.makeText(this, "发送失败", Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            // 语音或文件：交由 ChatWorkFragment 处理
+            Fragment current = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
+            if (current instanceof ChatWorkFragment) {
+                ((ChatWorkFragment) current).sendPendingMessageDirectly(msg);
             } else {
-                switch (currentConnectionState) {
-                    case BluetoothService.STATE_NONE:
-                        statusText = "未连接";
-                        break;
-                    case BluetoothService.STATE_LISTEN:
-                        statusText = "等待连接...";
-                        break;
-                    case BluetoothService.STATE_CONNECTING:
-                        statusText = "连接中...";
-                        break;
-                    case BluetoothService.STATE_CONNECTED:
-                        statusText = "已连接: " + connectedDeviceName;
-                        break;
-                }
+                Toast.makeText(this, "跳转到聊天界面发送...", Toast.LENGTH_SHORT).show();
+                ChatWorkFragment.pendingMessageToSend = msg.id;
+                switchToFragment("ChatWorkFragment", msg.targetDeviceAddress, msg.targetDeviceName);
             }
-            mainStatus.setText(statusText);
-        });
+        }
+    }
+
+    // ==================== 自动扫描管理 ====================
+
+    public void registerScanListener(AutoDeviceScanner.DeviceScanListener listener) {
+        if (autoDeviceScanner != null) autoDeviceScanner.addListener(listener);
+    }
+
+    public void unregisterScanListener(AutoDeviceScanner.DeviceScanListener listener) {
+        if (autoDeviceScanner != null) autoDeviceScanner.removeListener(listener);
+    }
+
+    public void updateAutoScannerSettings() {
+        SharedPreferences prefs = getSharedPreferences("settings", MODE_PRIVATE);
+        boolean enabled = prefs.getBoolean("auto_scan_enabled", false);
+        int interval = prefs.getInt("auto_scan_interval", 60);
+        if (autoDeviceScanner != null) {
+            autoDeviceScanner.setEnabled(enabled);
+            autoDeviceScanner.setScanInterval(interval);
+        }
+    }
+
+    // ★★★ 暂停/恢复自动扫描（供 ChatWorkFragment 调用） ★★★
+    public void pauseAutoScan() {
+        if (autoDeviceScanner != null) {
+            autoDeviceScanner.setEnabled(false);
+            LogUtil.d(TAG, "自动扫描已暂停（文件传输中）");
+        }
+    }
+
+    public void resumeAutoScan() {
+        if (autoDeviceScanner != null) {
+            updateAutoScannerSettings(); // 从 SharedPreferences 恢复扫描配置
+            LogUtil.d(TAG, "自动扫描已恢复");
+        }
+    }
+
+    // ==================== 可被发现请求管理 ====================
+
+    private void initDiscoverableSettings() {
+        SharedPreferences prefs = getSharedPreferences("settings", MODE_PRIVATE);
+        requestDiscoverableEnabled = prefs.getBoolean("request_discoverable", false);
+        if (requestDiscoverableEnabled) startDiscoverableLoop();
+    }
+
+    public void updateDiscoverableSettings() {
+        SharedPreferences prefs = getSharedPreferences("settings", MODE_PRIVATE);
+        boolean enabled = prefs.getBoolean("request_discoverable", false);
+        if (enabled && !requestDiscoverableEnabled) {
+            requestDiscoverableEnabled = true;
+            startDiscoverableLoop();
+        } else if (!enabled && requestDiscoverableEnabled) {
+            requestDiscoverableEnabled = false;
+            stopDiscoverableLoop();
+        }
+    }
+
+    private void startDiscoverableLoop() {
+        stopDiscoverableLoop();
+        discoverableRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (!requestDiscoverableEnabled) return;
+                if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+                    discoverableHandler.postDelayed(this, 30000);
+                    return;
+                }
+                int scanMode = bluetoothAdapter.getScanMode();
+                if (scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE) {
+                    discoverableHandler.postDelayed(this, DISCOVERABLE_DURATION * 1000L);
+                    return;
+                }
+                if (isAppInForeground()) {
+                    requestDiscoverable();
+                } else {
+                    pendingDiscoverableRequest = true;
+                    sendDiscoverableNotification();
+                }
+                discoverableHandler.postDelayed(this, DISCOVERABLE_DURATION * 1000L);
+            }
+        };
+        discoverableHandler.postDelayed(discoverableRunnable, 5000);
+    }
+
+    private void stopDiscoverableLoop() {
+        if (discoverableRunnable != null) {
+            discoverableHandler.removeCallbacks(discoverableRunnable);
+            discoverableRunnable = null;
+        }
+        pendingDiscoverableRequest = false;
+    }
+
+    @SuppressLint("MissingPermission")
+    private void requestDiscoverable() {
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) return;
+        Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
+        intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, DISCOVERABLE_DURATION);
+        startActivity(intent);
+        lastDiscoverableRequestTime = System.currentTimeMillis();
+        LogUtil.d(TAG, "请求可被发现，持续 " + DISCOVERABLE_DURATION + " 秒");
+    }
+
+    private void checkAndRequestDiscoverable() {
+        if (bluetoothAdapter == null) return;
+        int scanMode = bluetoothAdapter.getScanMode();
+        if (scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE) {
+            LogUtil.d(TAG, "本机已可被发现");
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastDiscoverableRequestTime < DISCOVERABLE_REQUEST_INTERVAL) {
+            LogUtil.d(TAG, "距上次请求可被发现不足300秒，跳过");
+            return;
+        }
+        requestDiscoverable();
+    }
+
+    private void sendDiscoverableNotification() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            NotificationChannel channel = new NotificationChannel(
+                    "discoverable_channel",
+                    "蓝牙可被发现",
+                    NotificationManager.IMPORTANCE_DEFAULT
+            );
+            nm.createNotificationChannel(channel);
+        }
+
+        Intent intent = new Intent(this, MainActivityNew.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+        Notification notification;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            notification = new Notification.Builder(this, "discoverable_channel")
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle("蓝牙可被发现请求")
+                    .setContentText("点击进入应用以允许本机被其他设备发现")
+                    .setContentIntent(pendingIntent)
+                    .setAutoCancel(true)
+                    .build();
+        } else {
+            notification = new androidx.core.app.NotificationCompat.Builder(this)
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle("蓝牙可被发现请求")
+                    .setContentText("点击进入应用以允许本机被其他设备发现")
+                    .setContentIntent(pendingIntent)
+                    .setAutoCancel(true)
+                    .build();
+        }
+
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (nm != null) nm.notify(1003, notification);
+        LogUtil.d(TAG, "发送可被发现请求通知");
+    }
+
+    private boolean isAppInForeground() {
+        android.app.ActivityManager activityManager =
+                (android.app.ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        if (activityManager == null) return false;
+        List<android.app.ActivityManager.RunningAppProcessInfo> processes =
+                activityManager.getRunningAppProcesses();
+        if (processes == null) return false;
+        for (android.app.ActivityManager.RunningAppProcessInfo process : processes) {
+            if (process.processName.equals(getPackageName()) &&
+                    process.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ==================== 设备选择对话框 ====================
-    private void showDeviceSelectionDialog() {
-        if (!discoverableRequested) {
-            Intent discoverableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
-            discoverableIntent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
-            startActivity(discoverableIntent);
-            discoverableRequested = true;
+
+    private class DeviceSelector {
+        private AlertDialog dialog;
+        private ArrayAdapter<String> adapter;
+        private final List<BluetoothDevice> availableDevices = new ArrayList<>();
+        private final List<String> deviceNames = new ArrayList<>();
+        private boolean discoverableRequested = false;
+
+        public void show() {
+            if (!discoverableRequested) {
+                Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
+                intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
+                startActivity(intent);
+                discoverableRequested = true;
+            }
+
+            availableDevices.clear();
+            deviceNames.clear();
+            adapter = new ArrayAdapter<>(MainActivityNew.this,
+                    android.R.layout.simple_list_item_1, deviceNames);
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(MainActivityNew.this);
+            builder.setTitle("请选择连接目标设备");
+            builder.setAdapter(adapter, (dialog, which) -> {
+                BluetoothDevice selected = availableDevices.get(which);
+                connectToDeviceForChat(selected);
+            });
+            builder.setNeutralButton("直接进入", (dialog, which) -> {
+                stopScanSafely();
+                safeUnregisterReceiver();
+                handler.removeCallbacksAndMessages(null);
+                clearBackStack();
+                loadFragment(new ChatWorkFragment());
+                currentConnectionState = IBluetoothService.STATE_NONE;
+                updateStatusDisplay();
+            });
+            builder.setNegativeButton("取消", null);
+            builder.setCancelable(false);
+            builder.setOnDismissListener(d -> {
+                dialog = null;
+                stopScanSafely();
+                safeUnregisterReceiver();
+                handler.removeCallbacksAndMessages(null);
+            });
+
+            dialog = builder.create();
+            dialog.show();
+            dialog.getButton(DialogInterface.BUTTON_NEGATIVE).setEnabled(false);
+            startDeviceScanning();
         }
 
-        availableDevices.clear();
-        deviceNames.clear();
-        deviceAdapter = new ArrayAdapter<>(
-                this,
-                android.R.layout.simple_list_item_1,
-                deviceNames
-        );
+        public void dismiss() {
+            if (dialog != null && dialog.isShowing()) dialog.dismiss();
+            dialog = null;
+        }
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("请先稍等，选择文本连接目标设备");
-        builder.setAdapter(deviceAdapter, (dialog, which) -> {
-            BluetoothDevice selectedDevice = availableDevices.get(which);
-            connectToDeviceForChat(selectedDevice);
-        });
+        public void onDeviceFound(BluetoothDevice device) {
+            if (device == null || !bluetoothFinder.getPairedDevices().contains(device)) return;
+            if (device.getAddress().equals(connectedDeviceAddress)) return;
+            if (availableDevices.contains(device)) return;
 
-        builder.setNeutralButton("直接进入", (dialog, which) -> {
-            stopScanSafely();
-            safeUnregisterReceiver();
-            handler.removeCallbacksAndMessages(null);
-            clearBackStack();
-            loadFragment(new ChatWorkFragment());
-            currentConnectionState = BluetoothService.STATE_NONE;
-            updateStatusDisplay();
-            isFirstLaunch = false;
-        });
+            availableDevices.add(device);
+            String name = device.getName();
+            if (name == null || name.isEmpty()) name = "未知设备 (" + device.getAddress() + ")";
+            deviceNames.add(name);
+            if (adapter != null) runOnUiThread(() -> adapter.notifyDataSetChanged());
+        }
 
-        builder.setNegativeButton("取消", null);
-        builder.setCancelable(false);
-        builder.setOnDismissListener(dialog -> {
-            deviceSelectionDialog = null;
-            stopScanSafely();
-            safeUnregisterReceiver();
-            handler.removeCallbacksAndMessages(null);
-        });
+        private void startDeviceScanning() {
+            bluetoothFinder.fetchPairedDevices();
+            IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+            try {
+                registerReceiver(deviceDiscoveryReceiver, filter);
+                isReceiverRegistered = true;
+            } catch (Exception e) {
+                LogUtil.e(TAG, "注册接收器失败", e);
+            }
 
-        deviceSelectionDialog = builder.create();
-        deviceSelectionDialog.show();
-        deviceSelectionDialog.getButton(DialogInterface.BUTTON_NEGATIVE).setEnabled(false);
-        startDeviceScanning();
-    }
-
-    private void stopScanSafely() {
-        if (bluetoothFinder != null) {
-            bluetoothFinder.stopScan();
+            handler.postDelayed(() -> {
+                bluetoothFinder.startScan();
+                handler.postDelayed(() -> {
+                    bluetoothFinder.stopScan();
+                    handler.postDelayed(() -> {
+                        bluetoothFinder.startScan();
+                        handler.postDelayed(() -> {
+                            bluetoothFinder.stopScan();
+                            if (dialog != null && dialog.isShowing()) {
+                                dialog.getButton(DialogInterface.BUTTON_NEGATIVE).setEnabled(true);
+                                dialog.getButton(DialogInterface.BUTTON_NEGATIVE)
+                                        .setOnClickListener(v -> dialog.dismiss());
+                            }
+                            handler.postDelayed(() -> {
+                                if (dialog != null && dialog.isShowing()) {
+                                    dialog.dismiss();
+                                    if (availableDevices.isEmpty()) {
+                                        Toast.makeText(MainActivityNew.this,
+                                                "没有找到附近已配对的设备", Toast.LENGTH_SHORT).show();
+                                    }
+                                }
+                            }, 3000);
+                        }, 3000);
+                    }, 100);
+                }, 6000);
+            }, 500);
         }
     }
+
+    private void showDeviceSelectionDialog() { deviceSelector.show(); }
+
+    private void stopScanSafely() { if (bluetoothFinder != null) bluetoothFinder.stopScan(); }
+
+    private void stopBluetoothScan() { if (bluetoothFinder != null) bluetoothFinder.stopScan(); }
 
     private void safeUnregisterReceiver() {
         if (isReceiverRegistered) {
@@ -437,183 +1018,67 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
                 unregisterReceiver(deviceDiscoveryReceiver);
                 isReceiverRegistered = false;
             } catch (IllegalArgumentException e) {
-                Log.w(TAG, "接收器未注册: " + e.getMessage());
+                LogUtil.w(TAG, "接收器未注册");
             }
         }
     }
 
-    private void connectToDeviceForChat(BluetoothDevice device) {
-        // ★★★ 如果该设备已经是当前连接的设备，直接跳转到聊天界面，不重新连接 ★★★
-        String currentAddress = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
-        if (currentAddress != null && currentAddress.equals(device.getAddress())) {
-            // 直接切换到聊天界面，加载历史
-            ChatWorkFragment chatWorkFragment = new ChatWorkFragment();
-            Bundle args = new Bundle();
-            args.putString("DEVICE_ADDRESS", device.getAddress());
-            args.putString("DEVICE_NAME", device.getName());
-            chatWorkFragment.setArguments(args);
-            clearBackStack();
-            loadFragment(chatWorkFragment);
-            updateStatusDisplay();
-            return;
-        }
+    private void dismissDeviceDialog() { deviceSelector.dismiss(); }
 
-        // 原有连接逻辑...
-        if (!serviceBound || bluetoothService == null) {
-            Toast.makeText(this, "蓝牙服务未就绪", Toast.LENGTH_SHORT).show();
-            return;
-        }
+    // ==================== 菜单 ====================
 
-        bluetoothService.setMode(BluetoothService.MODE_CHAT);
-        currentMode = BluetoothService.MODE_CHAT;
-
-        String localAddress = bluetoothAdapter.getAddress();
-        String remoteAddress = device.getAddress();
-        boolean isInitiator = localAddress.compareTo(remoteAddress) > 0;
-
-        bluetoothService.setConnectionRole(isInitiator, remoteAddress);
-
-        if (isInitiator) {
-            Toast.makeText(this, "正在连接 " + device.getName(), Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(this, "等待 " + device.getName() + " 连接", Toast.LENGTH_SHORT).show();
-        }
-
-        connectedDeviceName = device.getName();
-        connectedDeviceAddress = device.getAddress();
-        currentConnectionState = BluetoothService.STATE_CONNECTING;
-        updateStatusDisplay();
-
-        ChatWorkFragment chatWorkFragment = new ChatWorkFragment();
-        Bundle args = new Bundle();
-        args.putString("DEVICE_ADDRESS", device.getAddress());
-        args.putString("DEVICE_NAME", device.getName());
-        chatWorkFragment.setArguments(args);
-
-        clearBackStack();
-        loadFragment(chatWorkFragment);
+    private void showPopupMenu(View view) {
+        PopupMenu popup = new PopupMenu(this, view);
+        popup.getMenuInflater().inflate(R.menu.main_menu, popup.getMenu());
+        popup.setOnMenuItemClickListener(this::onOptionsItemSelected);
+        popup.show();
     }
-    // ==================== 服务连接 ====================
-    private ServiceConnection serviceConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            BluetoothService.LocalBinder binder = (BluetoothService.LocalBinder) service;
-            bluetoothService = binder.getService();
-            bluetoothService.registerCallback(MainActivityNew.this);
-            serviceBound = true;
-
-            if (isFromNotification) {
-                // 直接跳转
-                switchToFragment(pendingFragmentType, pendingDeviceAddress, pendingDeviceName);
-                // ★★★ 如果已连接，强制刷新状态 ★★★
-                if (bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
-                    currentConnectionState = BluetoothService.STATE_CONNECTED;
-                    String connectedName = bluetoothService.getConnectedDeviceName();
-                    if (connectedName != null && !connectedName.isEmpty()) {
-                        connectedDeviceName = connectedName;
-                    } else {
-                        connectedDeviceName = pendingDeviceName;
-                    }
-                    updateStatusDisplay();
-                }
-                pendingFragmentType = null;
-                pendingDeviceAddress = null;
-                pendingDeviceName = null;
-                isFromNotification = false;
-                return;
-            }
-
-            bluetoothService.start();
-            int state = bluetoothService.getState();
-            onConnectionStatusChanged(state, "");
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            serviceBound = false;
-        }
-    };
 
     @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        // 释放音频
-        if (callAudioRecorder != null) {
-            callAudioRecorder.release();
-            callAudioRecorder = null;
-        }
-        // 解除服务绑定
-        if (serviceBound) {
-            if (bluetoothService != null) {
-                bluetoothService.unregisterCallback(this);
-            }
-            unbindService(serviceConnection);
-            serviceBound = false;
-        }
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.main_menu, menu);
+        return true;
+    }
 
-        // 停止蓝牙扫描（已安全处理）
-        if (bluetoothFinder != null) {
-            bluetoothFinder.stopScan();
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == R.id.menu_refresh) {
+            refreshPairedDevices();
+            return true;
+        } else if (item.getItemId() == R.id.menu_select_device) {
+            showDeviceSelectionDialog();
+            return true;
         }
-
-        // 取消注册广播接收器
-        safeUnregisterReceiver();
-
-        handler.removeCallbacksAndMessages(null);
-        if (callTimerRunnable != null) {
-            callTimerHandler.removeCallbacks(callTimerRunnable);
-        }
-        if (deviceSelectionDialog != null && deviceSelectionDialog.isShowing()) {
-            deviceSelectionDialog.dismiss();
-        }
+        return super.onOptionsItemSelected(item);
     }
 
     // ==================== 蓝牙服务回调 ====================
+
     @Override
     public void onMessageReceived(String message, String deviceAddress) {
-        // 过滤控制消息（不显示Toast，不保存）
         if (message == null) return;
         String trimmed = message.trim();
-        if (trimmed.startsWith(BluetoothService.FILE_REQUEST_PREFIX) ||
-                trimmed.equals(BluetoothService.FILE_ACCEPT) ||
-                trimmed.equals(BluetoothService.FILE_REJECT) ||
-                trimmed.startsWith(BluetoothService.CALL_PREFIX) ||
-                trimmed.startsWith(BluetoothService.CALL_REQUEST) ||
-                trimmed.equals(BluetoothService.CALL_ACCEPT) ||
-                trimmed.equals(BluetoothService.CALL_REJECT) ||
-                trimmed.equals(BluetoothService.CALL_HANGUP)) {
-            // 控制消息，忽略
+        if (trimmed.startsWith(IBluetoothService.FILE_REQUEST_PREFIX) ||
+                trimmed.equals(IBluetoothService.FILE_ACCEPT) ||
+                trimmed.equals(IBluetoothService.FILE_REJECT) ||
+                trimmed.startsWith(IBluetoothService.CALL_PREFIX) ||
+                trimmed.startsWith(IBluetoothService.CALL_REQUEST) ||
+                trimmed.equals(IBluetoothService.CALL_ACCEPT) ||
+                trimmed.equals(IBluetoothService.CALL_REJECT) ||
+                trimmed.equals(IBluetoothService.CALL_HANGUP)) {
             return;
         }
 
-        final String displayMessage = message.startsWith("TXT:") ? message.substring(4) : message;
+        final String displayMessage = message.startsWith(IBluetoothService.TEXT_PREFIX) ?
+                message.substring(4) : message;
         runOnUiThread(() -> {
             Toast.makeText(this, "收到新消息: " + displayMessage, Toast.LENGTH_SHORT).show();
-            Fragment currentFragment = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
-            if (currentFragment instanceof ChatFragment) {
-                ((ChatFragment) currentFragment).refreshDeviceList();
+            Fragment current = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
+            if (current instanceof ChatFragment) {
+                ((ChatFragment) current).refreshDeviceList();
             }
             saveMessageToChatHistory(displayMessage, deviceAddress);
         });
-    }
-
-    private void saveMessageToChatHistory(String message, String deviceAddress) {
-        try {
-            String filename = "chat_" + deviceAddress.replace(":", "_") + ".txt";
-            File file = new File(getExternalFilesDir(null), filename);
-            if (!file.exists()) {
-                file.createNewFile();
-            }
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-            String timestamp = sdf.format(new Date());
-            // 优化：使用 try-with-resources 确保资源释放
-            try (FileOutputStream fos = new FileOutputStream(file, true);
-                 OutputStreamWriter osw = new OutputStreamWriter(fos, "UTF-8")) {
-                osw.write(timestamp + ": " + message + "\n");
-            }
-        } catch (IOException e) {
-            Log.e(TAG, "Error saving message to file", e);
-        }
     }
 
     @Override
@@ -623,78 +1088,102 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             if (deviceName != null && !deviceName.isEmpty()) {
                 connectedDeviceName = deviceName;
             }
-            // ★★★ 连接成功时同步更新设备地址 ★★★
-            if (state == BluetoothService.STATE_CONNECTED && bluetoothService != null) {
-                String addr = bluetoothService.getConnectedDeviceAddress();
-                if (addr != null) {
-                    connectedDeviceAddress = addr;
-                }
-            } else if (state == BluetoothService.STATE_NONE || state == BluetoothService.STATE_LISTEN) {
-                connectedDeviceAddress = "";
-            }
             updateStatusDisplay();
 
-            if (state == BluetoothService.STATE_CONNECTED && !isFileTransferring && !isInCall) {
-                if (bluetoothService == null) return;
-                int mode = bluetoothService.getMode();
-                String address = bluetoothService.getConnectedDeviceAddress();
-                String name = bluetoothService.getConnectedDeviceName();
-                if (address == null || name == null) return;
-
+            if (state == IBluetoothService.STATE_CONNECTED) {
+                // 处理待发送消息
                 Fragment currentFragment = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
-                boolean isChat = currentFragment instanceof ChatWorkFragment;
-                boolean isTalkback = currentFragment instanceof TalkbackFragment;
+                if (currentFragment instanceof ChatWorkFragment) {
+                    ChatWorkFragment chatFrag = (ChatWorkFragment) currentFragment;
+                    String address = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+                    if (address != null) {
+                        chatFrag.attemptSendPendingForDevice(address);
+                    }
+                }
 
-                // ★★★ 只有当前不是目标 Fragment 时才跳转，避免重复刷新 ★★★
-                if (mode == BluetoothService.MODE_CHAT && !isChat) {
-                    switchToFragment("ChatWorkFragment", address, name);
-                } else if (mode == BluetoothService.MODE_TALKBACK && !isTalkback) {
-                    switchToFragment("TalkbackFragment", address, name);
+                if (pendingSendAfterConnect != null) {
+                    String targetAddr = pendingSendAfterConnect.targetDeviceAddress;
+                    String currentAddr = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+                    if (currentAddr != null && targetAddr != null && currentAddr.equals(targetAddr)) {
+                        handleConnectedMessage(pendingSendAfterConnect);
+                        pendingSendAfterConnect = null;
+                        pendingConnectRetryCount = 0;
+                        if (connectTimeoutRunnable != null) {
+                            connectTimeoutHandler.removeCallbacks(connectTimeoutRunnable);
+                            connectTimeoutRunnable = null;
+                        }
+                    } else {
+                        pendingSendAfterConnect = null;
+                        pendingConnectRetryCount = 0;
+                    }
+                }
+
+                // 自动跳转（使用安全方式）
+                if (!isFileTransferring && !callManager.isInCall() && bluetoothService != null) {
+                    int mode = bluetoothService.getMode();
+                    String address = bluetoothService.getConnectedDeviceAddress();
+                    String name = bluetoothService.getConnectedDeviceName();
+                    if (address != null && name != null) {
+                        Fragment current = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
+                        boolean isChat = current instanceof ChatWorkFragment;
+                        boolean isTalkback = current instanceof TalkbackFragment;
+                        if (mode == IBluetoothService.MODE_CHAT && !isChat) {
+                            handler.post(() -> switchToFragment("ChatWorkFragment", address, name));
+                        } else if (mode == IBluetoothService.MODE_TALKBACK && !isTalkback) {
+                            handler.post(() -> switchToFragment("TalkbackFragment", address, name));
+                        }
+                    }
+                }
+            } else if (state == IBluetoothService.STATE_NONE || state == IBluetoothService.STATE_LISTEN) {
+                if (pendingSendAfterConnect != null && connectTimeoutRunnable != null) {
+                    connectTimeoutHandler.removeCallbacks(connectTimeoutRunnable);
+                    connectTimeoutRunnable = null;
                 }
             }
         });
     }
+
     @Override
     public void onTalkbackDataReceived(byte[] data, String deviceAddress) {
-        if (isInCall) {
-            if (callAudioRecorder != null && data != null && data.length > 10) {
-                callAudioRecorder.playAudio(data, data.length);
+        if (callManager.isInCall()) {
+            if (callManager.getAudioRecorder() != null && data != null && data.length > 10) {
+                callManager.getAudioRecorder().playAudio(data, data.length);
             }
         } else {
-            Fragment currentFragment = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
-            if (currentFragment instanceof TalkbackFragment) {
-                ((TalkbackFragment) currentFragment).onTalkbackDataReceived(data, deviceAddress);
+            Fragment current = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
+            if (current instanceof TalkbackFragment) {
+                ((TalkbackFragment) current).onTalkbackDataReceived(data, deviceAddress);
             }
         }
     }
 
     @Override
-    public void onNonTextDataReceived(String deviceAddress) {
-        // 忽略
-    }
+    public void onNonTextDataReceived(String deviceAddress) { /* 忽略 */ }
 
     // ==================== 呼叫回调 ====================
+
     @Override
     public void onCallRequest(String callerName, String deviceAddress) {
         runOnUiThread(() -> {
-            if (isInCall) {
+            if (callManager.isInCall()) {
                 if (bluetoothService != null) {
-                    bluetoothService.write((BluetoothService.TEXT_PREFIX + BluetoothService.CALL_REJECT).getBytes());
+                    bluetoothService.write((IBluetoothService.TEXT_PREFIX + IBluetoothService.CALL_REJECT).getBytes());
                 }
                 return;
             }
+
             AlertDialog.Builder builder = new AlertDialog.Builder(this);
             builder.setTitle("来电");
             builder.setMessage(callerName + " 邀请您通话");
             builder.setPositiveButton("接听", (dialog, which) -> {
                 if (bluetoothService != null) {
-                    bluetoothService.write((BluetoothService.TEXT_PREFIX + BluetoothService.CALL_ACCEPT).getBytes());
+                    bluetoothService.write((IBluetoothService.TEXT_PREFIX + IBluetoothService.CALL_ACCEPT).getBytes());
                     startCall(deviceAddress, callerName);
                 }
             });
             builder.setNegativeButton("拒绝", (dialog, which) -> {
                 if (bluetoothService != null) {
-                    bluetoothService.write((BluetoothService.TEXT_PREFIX + BluetoothService.CALL_REJECT).getBytes());
+                    bluetoothService.write((IBluetoothService.TEXT_PREFIX + IBluetoothService.CALL_REJECT).getBytes());
                 }
             });
             builder.setCancelable(false);
@@ -705,20 +1194,18 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
                 if (dialog.isShowing()) {
                     dialog.dismiss();
                     if (bluetoothService != null) {
-                        bluetoothService.write((BluetoothService.TEXT_PREFIX + BluetoothService.CALL_HANGUP).getBytes());
+                        bluetoothService.write((IBluetoothService.TEXT_PREFIX + IBluetoothService.CALL_HANGUP).getBytes());
                     }
                     Toast.makeText(MainActivityNew.this, "对方未响应，通话取消", Toast.LENGTH_SHORT).show();
                 }
-            }, 10000);
+            }, CALL_TIMEOUT_MS);
         });
     }
 
     @Override
     public void onCallAccepted(String deviceAddress) {
         runOnUiThread(() -> {
-            if (!isInCall) {
-                startCall(deviceAddress, connectedDeviceName);
-            }
+            if (!callManager.isInCall()) startCall(deviceAddress, connectedDeviceName);
         });
     }
 
@@ -739,107 +1226,129 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
     }
 
     // ==================== 通话管理 ====================
-    public void startCall(String targetAddress, String targetName) {
-        if (isInCall) return;
-        isInCall = true;
-        callTargetAddress = targetAddress;
-        callTargetName = targetName;
-        callStartTime = System.currentTimeMillis();
 
-        if (bluetoothService != null) {
-            bluetoothService.setMode(BluetoothService.MODE_TALKBACK);
-            onConnectionStatusChanged(bluetoothService.getState(), bluetoothService.getConnectedDeviceName());
-        }
+    private class CallManager {
+        private boolean inCall = false;
+        private String targetAddress;
+        private String targetName;
+        private long startTime;
+        private Fragment callFragment;
+        private AudioRecorderPlayer audioRecorder;
+        private final Handler timerHandler = new Handler();
+        private Runnable timerRunnable;
 
-        if (callAudioRecorder == null) {
-            callAudioRecorder = new AudioRecorderPlayer(this);
-            callAudioRecorder.setAudioDataSender(data -> {
-                if (isInCall && bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
-                    bluetoothService.write(data, BluetoothService.MODE_TALKBACK);
-                }
-            });
-        }
-        callAudioRecorder.startRecording();
+        public boolean isInCall() { return inCall; }
+        public String getTargetName() { return targetName; }
+        public AudioRecorderPlayer getAudioRecorder() { return audioRecorder; }
 
-        CallFragment fragment = new CallFragment();
-        Bundle args = new Bundle();
-        args.putString("TARGET_NAME", targetName);
-        args.putString("TARGET_ADDRESS", targetAddress);
-        fragment.setArguments(args);
-        callFragment = fragment;
+        public void startCall(String address, String name) {
+            if (inCall) return;
+            inCall = true;
+            targetAddress = address;
+            targetName = name;
+            startTime = System.currentTimeMillis();
 
-        clearBackStack();
-        getSupportFragmentManager().beginTransaction()
-                .replace(R.id.fragment_container, fragment)
-                .addToBackStack(null)
-                .commitAllowingStateLoss();
-
-        updateStatusDisplay();
-
-        callTimerRunnable = () -> {
-            if (isInCall) {
-                updateCallDuration();
-                callTimerHandler.postDelayed(callTimerRunnable, 1000);
+            if (bluetoothService != null) {
+                bluetoothService.setMode(IBluetoothService.MODE_TALKBACK);
+                onConnectionStatusChanged(bluetoothService.getState(), bluetoothService.getConnectedDeviceName());
             }
-        };
-        callTimerHandler.post(callTimerRunnable);
-    }
 
-    private void updateCallDuration() {
-        Fragment currentFragment = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
-        if (currentFragment instanceof CallFragment) {
-            long elapsed = System.currentTimeMillis() - callStartTime;
-            ((CallFragment) currentFragment).updateDuration(elapsed);
+            if (audioRecorder == null) {
+                audioRecorder = new AudioRecorderPlayer(MainActivityNew.this);
+                audioRecorder.setAudioDataSender(data -> {
+                    if (inCall && bluetoothService != null &&
+                            bluetoothService.getState() == IBluetoothService.STATE_CONNECTED) {
+                        bluetoothService.write(data, IBluetoothService.MODE_TALKBACK);
+                    }
+                });
+            }
+            audioRecorder.startRecording();
+
+            CallFragment fragment = new CallFragment();
+            Bundle args = new Bundle();
+            args.putString("TARGET_NAME", name);
+            args.putString("TARGET_ADDRESS", address);
+            fragment.setArguments(args);
+            callFragment = fragment;
+
+            clearBackStack();
+            getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.fragment_container, fragment)
+                    .addToBackStack(null)
+                    .commitAllowingStateLoss();
+
+            updateStatusDisplay();
+
+            timerRunnable = () -> {
+                if (inCall) {
+                    updateCallDuration();
+                    timerHandler.postDelayed(timerRunnable, 1000);
+                }
+            };
+            timerHandler.post(timerRunnable);
+        }
+
+        private void updateCallDuration() {
+            Fragment current = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
+            if (current instanceof CallFragment) {
+                long elapsed = System.currentTimeMillis() - startTime;
+                ((CallFragment) current).updateDuration(elapsed);
+            }
+        }
+
+        public void endCall() {
+            if (!inCall) return;
+            inCall = false;
+            timerHandler.removeCallbacks(timerRunnable);
+
+            if (audioRecorder != null) {
+                audioRecorder.stopRecording();
+                audioRecorder.release();
+                audioRecorder = null;
+            }
+
+            if (bluetoothService != null && bluetoothService.getState() == IBluetoothService.STATE_CONNECTED) {
+                bluetoothService.write((IBluetoothService.TEXT_PREFIX + IBluetoothService.CALL_HANGUP).getBytes());
+            }
+
+            String address = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
+            String name = bluetoothService != null ? bluetoothService.getConnectedDeviceName() : null;
+            if (address != null && name != null) {
+                getSupportFragmentManager().popBackStack();
+                switchToFragment("ChatWorkFragment", address, name);
+            } else {
+                getSupportFragmentManager().popBackStack();
+            }
+
+            updateStatusDisplay();
+            callFragment = null;
+            targetAddress = null;
+            targetName = null;
+        }
+
+        public void release() {
+            timerHandler.removeCallbacks(timerRunnable);
+            if (audioRecorder != null) {
+                audioRecorder.stopRecording();
+                audioRecorder.release();
+                audioRecorder = null;
+            }
         }
     }
 
-    public void endCall() {
-        if (!isInCall) return;
-        isInCall = false;
-        callTimerHandler.removeCallbacks(callTimerRunnable);
+    public void startCall(String targetAddress, String targetName) { callManager.startCall(targetAddress, targetName); }
+    public void endCall() { callManager.endCall(); }
 
-        if (callAudioRecorder != null) {
-            callAudioRecorder.stopRecording();
-            callAudioRecorder.release();
-            callAudioRecorder = null;
-        }
-
-        // 发送挂断消息
-        if (bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
-            bluetoothService.write((BluetoothService.TEXT_PREFIX + BluetoothService.CALL_HANGUP).getBytes());
-        }
-
-        // ★★★ 挂断后回到 ChatWorkFragment（如果有已连接设备）★★★
-        String address = bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : null;
-        String name = bluetoothService != null ? bluetoothService.getConnectedDeviceName() : null;
-        if (address != null && name != null) {
-            // 先弹出当前 Fragment 回到上一级
-            getSupportFragmentManager().popBackStack();
-            // 然后切换到 ChatWorkFragment
-            switchToFragment("ChatWorkFragment", address, name);
-        } else {
-            // 没有连接，直接弹出
-            getSupportFragmentManager().popBackStack();
-        }
-
-        updateStatusDisplay();
-        callFragment = null;
-        callTargetAddress = null;
-        callTargetName = null;
-    }
-
-    // ==================== 拨号功能 ====================
     public void dialCall() {
-        if (isInCall) {
+        if (callManager.isInCall()) {
             Toast.makeText(this, "通话中，无法拨号", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (bluetoothService == null || bluetoothService.getState() != BluetoothService.STATE_CONNECTED) {
+        if (bluetoothService == null || bluetoothService.getState() != IBluetoothService.STATE_CONNECTED) {
             Toast.makeText(this, "未连接，无法拨号", Toast.LENGTH_SHORT).show();
             return;
         }
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("选择通话设备");
+
         Set<BluetoothDevice> bonded = bluetoothAdapter.getBondedDevices();
         final List<BluetoothDevice> deviceList = new ArrayList<>(bonded);
         final List<String> deviceNames = new ArrayList<>();
@@ -852,11 +1361,14 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             Toast.makeText(this, "没有已配对的设备", Toast.LENGTH_SHORT).show();
             return;
         }
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, deviceNames);
-        builder.setAdapter(adapter, (dialog, which) -> {
-            BluetoothDevice selected = deviceList.get(which);
-            confirmAndCall(selected);
-        });
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择通话设备");
+        builder.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, deviceNames),
+                (dialog, which) -> {
+                    BluetoothDevice selected = deviceList.get(which);
+                    confirmAndCall(selected);
+                });
         builder.setNegativeButton("取消", null);
         builder.show();
     }
@@ -866,7 +1378,7 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         builder.setTitle("确认呼叫");
         builder.setMessage("呼叫 " + device.getName() + " ?");
         builder.setPositiveButton("呼叫", (dialog, which) -> {
-            if (bluetoothService == null || bluetoothService.getState() != BluetoothService.STATE_CONNECTED) {
+            if (bluetoothService == null || bluetoothService.getState() != IBluetoothService.STATE_CONNECTED) {
                 Toast.makeText(this, "未连接，无法呼叫", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -875,21 +1387,21 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
                 bluetoothService.stop();
                 bluetoothService.setConnectionRole(true, device.getAddress());
                 handler.postDelayed(() -> {
-                    if (bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
+                    if (bluetoothService.getState() == IBluetoothService.STATE_CONNECTED) {
                         String myName = bluetoothAdapter.getName();
                         if (myName == null) myName = "我";
-                        bluetoothService.write((BluetoothService.TEXT_PREFIX +
-                                BluetoothService.CALL_REQUEST + myName).getBytes());
+                        bluetoothService.write((IBluetoothService.TEXT_PREFIX +
+                                IBluetoothService.CALL_REQUEST + myName).getBytes());
                         Toast.makeText(MainActivityNew.this, "正在呼叫 " + device.getName(), Toast.LENGTH_LONG).show();
                     } else {
                         Toast.makeText(MainActivityNew.this, "连接失败", Toast.LENGTH_SHORT).show();
                     }
-                }, 2000);
+                }, RECONNECT_DELAY_MS);
             } else {
                 String myName = bluetoothAdapter.getName();
                 if (myName == null) myName = "我";
-                bluetoothService.write((BluetoothService.TEXT_PREFIX +
-                        BluetoothService.CALL_REQUEST + myName).getBytes());
+                bluetoothService.write((IBluetoothService.TEXT_PREFIX +
+                        IBluetoothService.CALL_REQUEST + myName).getBytes());
                 Toast.makeText(this, "正在呼叫 " + device.getName(), Toast.LENGTH_LONG).show();
             }
         });
@@ -897,178 +1409,200 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         builder.show();
     }
 
-    // ==================== 召唤对话框 ====================
-    private void showCallDialog() {
-        runOnUiThread(() -> {
-            if (bluetoothService == null || !serviceBound) {
-                Toast.makeText(MainActivityNew.this, "服务未就绪，请稍后", Toast.LENGTH_SHORT).show();
-                isCallNotification = false;
-                clearBackStack();
-                loadFragment(new ChatFragment());
-                updateStatusDisplay();
-                return;
-            }
+    // ==================== 工具方法 ====================
 
-            AlertDialog.Builder builder = new AlertDialog.Builder(MainActivityNew.this);
-            builder.setTitle("召唤上线");
-            builder.setMessage(callCallerName + " 召唤您！是否接受？");
-            builder.setPositiveButton("接受", (dialog, which) -> {
-                if (bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
-                    String address = bluetoothService.getConnectedDeviceAddress();
-                    String name = bluetoothService.getConnectedDeviceName();
-                    if (address != null && name != null) {
-                        switchToFragment("ChatWorkFragment", address, name);
-                        return;
-                    }
-                }
-                if (callDeviceAddress != null && !callDeviceAddress.isEmpty()) {
-                    BluetoothDevice device = bluetoothAdapter.getRemoteDevice(callDeviceAddress);
-                    connectToDeviceForChat(device);
-                } else {
-                    Toast.makeText(MainActivityNew.this, "无法连接", Toast.LENGTH_SHORT).show();
-                }
-            });
-            builder.setNegativeButton("拒绝", (dialog, which) -> {
-                clearBackStack();
-                loadFragment(new ChatFragment());
-                updateStatusDisplay();
-            });
-            builder.setCancelable(false);
-            builder.show();
-            isCallNotification = false;
+    public void setFileTransferring(boolean transferring) { this.isFileTransferring = transferring; }
+
+    public void setFileTransferStatus(String status) {
+        runOnUiThread(() -> {
+            if (mainStatus != null) mainStatus.setText(status);
         });
     }
 
-    // ==================== Fragment 管理 ====================
-    private void loadFragment(Fragment fragment) {
-        FragmentManager fragmentManager = getSupportFragmentManager();
-        FragmentTransaction transaction = fragmentManager.beginTransaction();
-        transaction.replace(R.id.fragment_container, fragment);
-        transaction.addToBackStack(null);
-        transaction.commitAllowingStateLoss();
-        updateEmptyHintVisibility();
+    private void saveMessageToChatHistory(String message, String deviceAddress) {
+        try {
+            String filename = "chat_" + deviceAddress.replace(":", "_") + ".txt";
+            File file = new File(getExternalFilesDir(null), filename);
+            if (!file.exists()) file.createNewFile();
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            String timestamp = sdf.format(new Date());
+            FileOutputStream fos = new FileOutputStream(file, true);
+            OutputStreamWriter osw = new OutputStreamWriter(fos, "UTF-8");
+            osw.write(timestamp + ": " + message + "\n");
+            osw.close();
+            fos.close();
+        } catch (IOException e) {
+            LogUtil.e(TAG, "保存消息失败", e);
+        }
     }
 
-    private void clearBackStack() {
-        FragmentManager fragmentManager = getSupportFragmentManager();
-        if (fragmentManager.getBackStackEntryCount() > 0) {
-            FragmentManager.BackStackEntry first = fragmentManager.getBackStackEntryAt(0);
-            fragmentManager.popBackStack(first.getId(), FragmentManager.POP_BACK_STACK_INCLUSIVE);
+    private void unbindServiceIfNeeded() {
+        if (serviceBound) {
+            if (bluetoothService != null) bluetoothService.unregisterCallback(this);
+            unbindService(serviceConnection);
+            serviceBound = false;
         }
-        updateEmptyHintVisibility();
     }
 
-    public void switchToFragment(String fragmentType, String deviceAddress, String deviceName) {
-        Fragment fragment = null;
-        if ("TalkbackFragment".equals(fragmentType)) {
-            fragment = new TalkbackFragment();
-            currentMode = BluetoothService.MODE_TALKBACK;
-        } else if ("ChatWorkFragment".equals(fragmentType)) {
-            fragment = new ChatWorkFragment();
-            currentMode = BluetoothService.MODE_CHAT;
-        }
+    @Override
+    public void onMessageConfirmed(long timestamp) {
+        runOnUiThread(() -> Toast.makeText(this, "对方已收到消息", Toast.LENGTH_SHORT).show());
+    }
 
-        if (fragment != null) {
-            Bundle args = new Bundle();
-            args.putString("DEVICE_ADDRESS", deviceAddress);
-            args.putString("DEVICE_NAME", deviceName);
-            fragment.setArguments(args);
+    // ==================== 外部文件分享 ====================
 
-            clearBackStack();
-            loadFragment(fragment);
+    private void handleShareIntent(Intent intent) {
+        if (intent == null) return;
+        String action = intent.getAction();
+        if (!Intent.ACTION_SEND.equals(action)) return;
 
-            // ★★★ 强制更新连接状态 ★★★
-            if (bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
-                currentConnectionState = BluetoothService.STATE_CONNECTED;
-                String connectedName = bluetoothService.getConnectedDeviceName();
-                if (connectedName != null && !connectedName.isEmpty()) {
-                    connectedDeviceName = connectedName;
-                } else {
-                    connectedDeviceName = deviceName;
+        Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        if (uri == null) return;
+
+        try {
+            String fileName = null;
+            long fileSize = 0;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+                    if (cursor != null && cursor.moveToFirst()) {
+                        int nameIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
+                        if (nameIndex >= 0) fileName = cursor.getString(nameIndex);
+                        int sizeIndex = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE);
+                        if (sizeIndex >= 0) fileSize = cursor.getLong(sizeIndex);
+                    }
                 }
-            } else {
-                // 如果未连接，但传入设备信息，设为连接中
-                currentConnectionState = BluetoothService.STATE_CONNECTING;
-                connectedDeviceName = deviceName;
             }
-            updateStatusDisplay();
+            if (fileName == null) fileName = "file_" + System.currentTimeMillis();
+            if (fileSize == 0) {
+                try (AssetFileDescriptor fd = getContentResolver().openAssetFileDescriptor(uri, "r")) {
+                    if (fd != null) fileSize = fd.getLength();
+                }
+            }
+
+            File cacheDir = new File(getCacheDir(), "shared_files");
+            if (!cacheDir.exists()) cacheDir.mkdirs();
+            File destFile = new File(cacheDir, fileName);
+            try (InputStream is = getContentResolver().openInputStream(uri);
+                 FileOutputStream fos = new FileOutputStream(destFile)) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = is.read(buffer)) != -1) fos.write(buffer, 0, len);
+            }
+
+            // 存入实例变量
+            pendingShareFile = destFile.getAbsolutePath();
+            pendingShareFileName = fileName;
+            pendingShareFileSize = fileSize;
+
+            showPairedDeviceDialog();
+
+        } catch (Exception e) {
+            LogUtil.e(TAG, "处理分享文件失败", e);
+            Toast.makeText(this, "无法读取文件", Toast.LENGTH_SHORT).show();
         }
     }
 
-    // ==================== 菜单 ====================
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        getMenuInflater().inflate(R.menu.main_menu, menu);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        int id = item.getItemId();
-        if (id == R.id.menu_pair) {
-            // 配对功能
-        } else if (id == R.id.menu_refresh) {
-            refreshPairedDevices();
-            return true;
-        } else if (id == R.id.menu_select_device) {
-            showDeviceSelectionDialog();
-            return true;
-        } else if (id == R.id.menu_settings) {
-            loadFragment(new SettingsFragment());
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
-    }
-
-    @SuppressLint("MissingPermission")
-    public void refreshPairedDevices() {
+    private void showPairedDeviceDialog() {
         if (bluetoothAdapter == null) return;
-        Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
-        pairedDevices.clear();
-        pairedDevices.addAll(devices);
-        if (deviceAdapter != null) {
-            deviceAdapter.notifyDataSetChanged();
+        Set<BluetoothDevice> bonded = bluetoothAdapter.getBondedDevices();
+        if (bonded.isEmpty()) {
+            Toast.makeText(this, "没有已配对的设备", Toast.LENGTH_SHORT).show();
+            clearPendingShare();
+            return;
         }
-        Log.d(TAG, "刷新配对设备列表，数量: " + pairedDevices.size());
+
+        final List<BluetoothDevice> deviceList = new ArrayList<>(bonded);
+        final List<String> deviceNames = new ArrayList<>();
+        for (BluetoothDevice d : deviceList) {
+            String name = d.getName();
+            if (name == null || name.isEmpty()) name = "未知设备";
+            deviceNames.add(name);
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择发送设备");
+        builder.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, deviceNames),
+                (dialog, which) -> {
+                    BluetoothDevice device = deviceList.get(which);
+                    switchToFragment("ChatWorkFragment", device.getAddress(), device.getName());
+                });
+        builder.setNegativeButton("取消", (dialog, which) -> {
+            clearPendingShare();
+        });
+        builder.show();
     }
 
-    public List<BluetoothDevice> getPairedDevices() {
-        return pairedDevices;
+    private void clearPendingShare() {
+        if (pendingShareFile != null) {
+            new File(pendingShareFile).delete();
+        }
+        pendingShareFile = null;
+        pendingShareFileName = null;
+        pendingShareFileSize = 0;
     }
 
-    // ==================== 内部Fragment ====================
-    public static class ChatFragment extends Fragment {
-        private DeviceListAdapter deviceAdapter;
+    // ==================== 内部 Fragments ====================
+
+    public static class ChatFragment extends Fragment implements AutoDeviceScanner.DeviceScanListener {
+        private DeviceListAdapter adapter;
         private MainActivityNew mainActivity;
+        private Set<String> scannedAddresses = new HashSet<>();
 
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
             View view = inflater.inflate(R.layout.fragment_chat, container, false);
-            Md3Ui.applyTree(view);
             ListView listView = view.findViewById(R.id.deviceListView);
-
             mainActivity = (MainActivityNew) getActivity();
-            if (mainActivity == null) return view;
-
-            deviceAdapter = new DeviceListAdapter(getActivity(), R.layout.item_main, mainActivity.getPairedDevices());
-            listView.setAdapter(deviceAdapter);
-            mainActivity.refreshPairedDevices();
-
-            listView.setOnItemClickListener((parent, view1, position, id) -> {
-                BluetoothDevice device = mainActivity.getPairedDevices().get(position);
-                if (device.getBondState() == BluetoothDevice.BOND_BONDED) {
-                    mainActivity.connectToDeviceForChat(device);
-                } else {
-                    pairDevice(device);
-                }
-            });
-
+            if (mainActivity != null) {
+                adapter = new DeviceListAdapter(getActivity(), R.layout.item_main,
+                        mainActivity.getPairedDevices(), scannedAddresses);
+                listView.setAdapter(adapter);
+                mainActivity.refreshPairedDevices();
+                listView.setOnItemClickListener((parent, v, position, id) -> {
+                    BluetoothDevice device = mainActivity.getPairedDevices().get(position);
+                    if (device.getBondState() == BluetoothDevice.BOND_BONDED) {
+                        mainActivity.connectToDeviceForChat(device);
+                    } else {
+                        pairDevice(device);
+                    }
+                });
+                mainActivity.registerScanListener(this);
+            }
+            Md3Ui.applyTree(view);
             return view;
         }
 
+        @Override
+        public void onDestroyView() {
+            super.onDestroyView();
+            if (mainActivity != null) mainActivity.unregisterScanListener(this);
+        }
+
+        @Override
+        public void onResume() {
+            super.onResume();
+            if (mainActivity != null) mainActivity.registerScanListener(this);
+        }
+
+        @Override
+        public void onPause() {
+            super.onPause();
+            if (mainActivity != null) mainActivity.unregisterScanListener(this);
+        }
+
+        @Override
+        public void onDeviceDetected(BluetoothDevice device) {
+            if (device == null || getActivity() == null) return;
+            if (mainActivity != null && mainActivity.getPairedDevices().contains(device)) {
+                scannedAddresses.add(device.getAddress());
+                if (adapter != null) adapter.notifyDataSetChanged();
+            }
+        }
+
         public void refreshDeviceList() {
-            if (deviceAdapter != null && mainActivity != null) {
-                deviceAdapter.notifyDataSetChanged();
+            if (adapter != null && mainActivity != null) {
+                mainActivity.refreshPairedDevices();
+                adapter.notifyDataSetChanged();
             }
         }
 
@@ -1079,8 +1613,49 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
                 method.invoke(device);
                 Toast.makeText(getActivity(), "正在配对: " + device.getName(), Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
-                Log.e(TAG, "配对失败: " + e.getMessage());
+                LogUtil.e(TAG, "配对失败", e);
                 Toast.makeText(getActivity(), "配对失败", Toast.LENGTH_SHORT).show();
+            }
+        }
+
+        private static class DeviceListAdapter extends ArrayAdapter<BluetoothDevice> {
+            private final LayoutInflater inflater;
+            private final int resource;
+            private final Context context;
+            private final Set<String> scannedAddresses;
+
+            public DeviceListAdapter(Context context, int resource, List<BluetoothDevice> devices,
+                                     Set<String> scannedAddresses) {
+                super(context, resource, devices);
+                this.context = context;
+                this.inflater = LayoutInflater.from(context);
+                this.resource = resource;
+                this.scannedAddresses = scannedAddresses;
+            }
+
+            @SuppressLint("MissingPermission")
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                if (convertView == null) {
+                    convertView = inflater.inflate(resource, parent, false);
+                }
+                BluetoothDevice device = getItem(position);
+                if (device != null) {
+                    TextView nameView = convertView.findViewById(R.id.deviceName);
+                    TextView addrView = convertView.findViewById(R.id.deviceAddress);
+                    TextView avatar = convertView.findViewById(R.id.avatar);
+                    String name = device.getName();
+                    if (name == null || name.isEmpty()) name = "未知设备";
+                    nameView.setText(name);
+                    addrView.setText(device.getAddress());
+                    int color = (scannedAddresses != null && scannedAddresses.contains(device.getAddress())) ?
+                            context.getResources().getColor(android.R.color.holo_blue_light) :
+                            context.getResources().getColor(android.R.color.black);
+                    nameView.setTextColor(color);
+                    addrView.setTextColor(context.getResources().getColor(android.R.color.darker_gray));
+                    avatar.setText("蓝牙");
+                }
+                return convertView;
             }
         }
     }
@@ -1089,17 +1664,28 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
             View view = inflater.inflate(R.layout.fragment_mine, container, false);
-
             View btnName = view.findViewById(R.id.btnName);
             View btnAbout = view.findViewById(R.id.btnAbout);
+            View btnSettings = view.findViewById(R.id.btnSettings);
+            View btnPendingMessages = view.findViewById(R.id.btnPendingMessages);
+            btnPendingMessages.setOnClickListener(v -> {
+                PendingMessagesFragment fragment = new PendingMessagesFragment();
+                getActivity().getSupportFragmentManager()
+                        .beginTransaction()
+                        .replace(R.id.fragment_container, fragment)
+                        .addToBackStack("pending")
+                        .commit();
+            });
             btnName.setOnClickListener(v -> showNameDialog());
             btnAbout.setOnClickListener(v -> showAboutDialog());
-            // 副文本显示当前蓝牙名称
-            TextView tvMineDeviceName = view.findViewById(R.id.tvMineDeviceName);
-            BluetoothAdapter btAdapter = BluetoothAdapter.getDefaultAdapter();
-            if (btAdapter != null && btAdapter.getName() != null) {
-                tvMineDeviceName.setText(btAdapter.getName());
-            }
+            btnSettings.setOnClickListener(v -> {
+                SettingsFragment fragment = new SettingsFragment();
+                getActivity().getSupportFragmentManager()
+                        .beginTransaction()
+                        .replace(R.id.fragment_container, fragment)
+                        .addToBackStack("settings")
+                        .commit();
+            });
             Md3Ui.applyTree(view);
             return view;
         }
@@ -1107,184 +1693,60 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         private void showNameDialog() {
             AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
             builder.setTitle("修改蓝牙名称");
-            MainActivityNew mainActivity = (MainActivityNew) getActivity();
-            String currentName = "";
-            if (mainActivity != null && mainActivity.bluetoothAdapter != null) {
-                currentName = mainActivity.bluetoothAdapter.getName();
-            }
+            MainActivityNew main = (MainActivityNew) getActivity();
+            String currentName = (main != null && main.bluetoothAdapter != null) ?
+                    main.bluetoothAdapter.getName() : "";
+
             LinearLayout layout = new LinearLayout(getActivity());
             layout.setOrientation(LinearLayout.VERTICAL);
             layout.setPadding(50, 30, 50, 10);
-            TextView tvCurrentName = new TextView(getActivity());
-            tvCurrentName.setText("当前名称: " + currentName);
-            tvCurrentName.setTextSize(16);
-            tvCurrentName.setTextIsSelectable(true);
-            layout.addView(tvCurrentName);
+            TextView tvCurrent = new TextView(getActivity());
+            tvCurrent.setText("当前名称: " + currentName);
+            tvCurrent.setTextSize(16);
+            tvCurrent.setTextIsSelectable(true);
+            layout.addView(tvCurrent);
+
             View space = new View(getActivity());
             space.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 20));
             layout.addView(space);
+
             final EditText input = new EditText(getActivity());
             input.setText(currentName);
             input.setHint("输入新名称");
             input.setSelectAllOnFocus(true);
             layout.addView(input);
             builder.setView(layout);
+
             builder.setPositiveButton("确认", (dialog, which) -> {
                 String newName = input.getText().toString();
-                if (!newName.isEmpty()) {
-                    setBluetoothName(newName);
+                if (!newName.isEmpty() && main != null && main.bluetoothAdapter != null) {
+                    main.bluetoothAdapter.setName(newName);
+                    Toast.makeText(getActivity(), "蓝牙名称已修改", Toast.LENGTH_SHORT).show();
                 }
             });
-            builder.setNegativeButton("取消", (dialog, which) -> dialog.cancel());
+            builder.setNegativeButton("取消", null);
             builder.show();
         }
 
-        @SuppressLint("MissingPermission")
-        private void setBluetoothName(String name) {
-            MainActivityNew mainActivity = (MainActivityNew) getActivity();
-            if (mainActivity != null && mainActivity.bluetoothAdapter != null) {
-                mainActivity.bluetoothAdapter.setName(name);
-                Toast.makeText(getActivity(), "蓝牙名称已修改", Toast.LENGTH_SHORT).show();
-            }
-        }
-
         private void showAboutDialog() {
-            // 获取版本号（带异常保护）
             String versionName = "未知版本";
             try {
                 if (getActivity() != null) {
-                    versionName = getActivity()
-                            .getPackageManager()
-                            .getPackageInfo(getActivity().getPackageName(), 0)
-                            .versionName;
+                    versionName = getActivity().getPackageManager()
+                            .getPackageInfo(getActivity().getPackageName(), 0).versionName;
                 }
             } catch (PackageManager.NameNotFoundException e) {
                 e.printStackTrace();
             }
-
-            // 用占位符拼接完整文本
             String aboutText = getString(R.string.about, versionName);
-
             new AlertDialog.Builder(getActivity())
                     .setTitle("关于")
-                    .setMessage(aboutText)          // 这里传入 CharSequence，不再是资源 ID
+                    .setMessage(aboutText)
                     .setPositiveButton("确定", null)
                     .show();
         }
     }
 
-    // ==================== 扫描和广播 ====================
-    private void startDeviceScanning() {
-        bluetoothFinder.fetchPairedDevices();
-        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-        try {
-            registerReceiver(deviceDiscoveryReceiver, filter);
-            isReceiverRegistered = true;
-        } catch (Exception e) {
-            Log.e(TAG, "注册接收器时出错: " + e.getMessage());
-        }
-
-        handler.postDelayed(() -> {
-            bluetoothFinder.startScan();
-            handler.postDelayed(() -> {
-                bluetoothFinder.stopScan();
-                handler.postDelayed(() -> {
-                    bluetoothFinder.startScan();
-                    handler.postDelayed(() -> {
-                        bluetoothFinder.stopScan();
-                        if (deviceSelectionDialog != null && deviceSelectionDialog.isShowing()) {
-                            deviceSelectionDialog.getButton(DialogInterface.BUTTON_NEGATIVE).setOnClickListener(null);
-                            deviceSelectionDialog.getButton(DialogInterface.BUTTON_NEGATIVE).setOnClickListener(v -> {
-                                deviceSelectionDialog.dismiss();
-                            });
-                            deviceSelectionDialog.getButton(DialogInterface.BUTTON_NEGATIVE).setEnabled(true);
-                        }
-                        handler.postDelayed(() -> {
-                            if (deviceSelectionDialog != null && deviceSelectionDialog.isShowing()) {
-                                deviceSelectionDialog.dismiss();
-                                if (availableDevices.isEmpty()) {
-                                    Toast.makeText(MainActivityNew.this, "没有找到附近已配对的设备", Toast.LENGTH_SHORT).show();
-                                }
-                            }
-                        }, 3000);
-                    }, 3000);
-                }, 100);
-            }, 6000);
-        }, 500);
-    }
-
-    private final BroadcastReceiver deviceDiscoveryReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                if (device != null) {
-                    if (bluetoothFinder.getPairedDevices().contains(device)) {
-                        if (!device.getAddress().equals(connectedDeviceAddress)) {
-                            if (!availableDevices.contains(device)) {
-                                availableDevices.add(device);
-                                String name = device.getName();
-                                if (name == null || name.isEmpty()) {
-                                    name = "未知设备 (" + device.getAddress() + ")";
-                                }
-                                deviceNames.add(name);
-                                if (deviceAdapter != null) {
-                                    runOnUiThread(() -> deviceAdapter.notifyDataSetChanged());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    private void showPopupMenu(View view) {
-        PopupMenu popup = new PopupMenu(this, view);
-        popup.getMenuInflater().inflate(R.menu.main_menu, popup.getMenu());
-        popup.setOnMenuItemClickListener(this::onOptionsItemSelected);
-        popup.show();
-    }
-
-    private void startReconnectTask(String deviceAddress, String deviceName) {
-        if (bluetoothService != null) {
-            bluetoothService.stop();
-        }
-        Handler reconnectHandler = new SafeHandler(this);
-        int[] reconnectAttempts = {0};
-
-        Runnable reconnectRunnable = new Runnable() {
-            @Override
-            public void run() {
-                if (bluetoothService != null && bluetoothService.getState() == BluetoothService.STATE_CONNECTED) {
-                    Toast.makeText(MainActivityNew.this, "已成功连接到 " + deviceName, Toast.LENGTH_SHORT).show();
-                    return;
-                }
-
-                if (reconnectAttempts[0] < 2) {
-                    reconnectAttempts[0]++;
-                    String attemptText = reconnectAttempts[0] == 1 ? "第一次" : "第二次";
-                    Toast.makeText(MainActivityNew.this,
-                            attemptText + "尝试连接到 " + deviceName,
-                            Toast.LENGTH_SHORT).show();
-
-                    BluetoothDevice device = bluetoothAdapter.getRemoteDevice(deviceAddress);
-                    if (device != null && bluetoothService != null) {
-                        String localAddress = bluetoothAdapter.getAddress();
-                        String remoteAddress = deviceAddress;
-                        boolean isInitiator = localAddress.compareTo(remoteAddress) > 0;
-                        bluetoothService.setConnectionRole(isInitiator, remoteAddress);
-                    }
-                    reconnectHandler.postDelayed(this, 1500);
-                } else {
-                    Toast.makeText(MainActivityNew.this,
-                            "无法连接到 " + deviceName + "，请手动重试",
-                            Toast.LENGTH_LONG).show();
-                }
-            }
-        };
-
-        reconnectHandler.postDelayed(reconnectRunnable, 500);
-    }
+    // 为了让内部类能访问外部类的 private 字段，保留此列表
+    private final List<BluetoothDevice> pairedDevices = new ArrayList<>();
 }

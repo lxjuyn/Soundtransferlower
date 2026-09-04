@@ -14,25 +14,24 @@ import android.widget.TextView;
 import java.util.List;
 
 public class DeviceListAdapter extends ArrayAdapter<BluetoothDevice> {
-
     private final LayoutInflater inflater;
     private final int resource;
+    private final Context context;
 
-    public DeviceListAdapter(@NonNull Context context, int resource, @NonNull List<BluetoothDevice> devices) {
+    public DeviceListAdapter(Context context, int resource, List<BluetoothDevice> devices) {
         super(context, resource, devices);
+        this.context = context;
         this.inflater = LayoutInflater.from(context);
         this.resource = resource;
     }
 
     @SuppressLint("MissingPermission")
-    @NonNull
     @Override
-    public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
+    public View getView(int position, View convertView, ViewGroup parent) {
         if (convertView == null) {
             convertView = inflater.inflate(resource, parent, false);
             Md3Ui.applyTree(convertView); // 处理 item_main 中 avatar 的 md3-chip-primary tag
         }
-
         BluetoothDevice device = getItem(position);
         if (device != null) {
             TextView deviceName = convertView.findViewById(R.id.deviceName);
@@ -51,7 +50,6 @@ public class DeviceListAdapter extends ArrayAdapter<BluetoothDevice> {
             deviceAddress.setTextColor(variant);
             if (avatar != null) avatar.setText("蓝牙");
         }
-
         return convertView;
     }
 }

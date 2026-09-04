@@ -73,4 +73,8 @@
     <string name="mine_about_sub">版权与开源信息</string>
     <string name="call_speaker">免提</string>
     <string name="call_hangup">挂断</string>
+    <string name="mine_pending">离线消息</string>
+    <string name="mine_pending_sub">对方上线后自动重发的消息</string>
+    <string name="mine_settings">设置</string>
+    <string name="mine_settings_sub">主题配色与功能开关</string>
 </resources>

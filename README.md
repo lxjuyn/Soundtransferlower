@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <p align="center">
   <h1 align="center">📋 纸条 — Soundtransferlower</h1>
   <p align="center"><strong>基于蓝牙 RFCOMM 的点对点通信应用</strong></p>
@@ -9,7 +10,7 @@
   <img src="https://img.shields.io/badge/Language-Java-orange" alt="Java">
   <img src="https://img.shields.io/badge/MinSDK-15-green" alt="MinSDK">
   <img src="https://img.shields.io/badge/TargetSDK-34-blue" alt="TargetSDK">
-  <img src="https://img.shields.io/badge/Version-2.9.3fix-purple" alt="Version">
+  <img src="https://img.shields.io/badge/Version-3.0.0beta1-md3-purple" alt="Version">
   <img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Autor-秋元-FF6B6B" alt="Author">
 </p>
@@ -294,4 +295,3 @@ This project is licensed under the **Apache License 2.0**.
 
 <p align="center">
   <strong>If you find this useful, please give a ⭐ Star!</strong>
-</p>
