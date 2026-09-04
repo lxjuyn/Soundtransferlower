@@ -152,6 +152,7 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.activity_main, container, false);
         initViews(view);
+        Md3Ui.applyTree(view); // 处理布局中 md3-btn-tonal 等 tag
         setLoadingState();
         checkPermissions();
         initBluetooth();
@@ -255,7 +256,7 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
                 isConnectionActive = true;
                 isConnecting = false;
                 btnTalk.setEnabled(true);
-                btnTalk.setBackgroundColor(ContextCompat.getColor(getActivity(), android.R.color.holo_green_light));
+                setTalkButtonState(R.attr.md3PrimaryContainer, R.attr.md3OnPrimaryContainer);
                 btnAudioMode.setEnabled(true);
                 btnTalk.setText("按下对讲");
                 btnDisconnect.setEnabled(true);
@@ -265,7 +266,7 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
                 isConnecting = false;
                 btnTalk.setEnabled(false);
                 btnTalk.setText("按下对讲");
-                btnTalk.setBackgroundColor(ContextCompat.getColor(getActivity(), android.R.color.darker_gray));
+                setTalkButtonState(R.attr.md3SurfaceContainerHighest, R.attr.md3OnSurfaceVariant);
                 btnDisconnect.setEnabled(true);
             }
         });
@@ -561,7 +562,7 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         stateChangeCount = 0;
         btnTalk.setEnabled(false);
         btnTalk.setText("按下对讲");
-        btnTalk.setBackgroundColor(ContextCompat.getColor(getActivity(), android.R.color.darker_gray));
+        setTalkButtonState(R.attr.md3SurfaceContainerHighest, R.attr.md3OnSurfaceVariant);
         btnAudioMode.setEnabled(false);
         deviceList.setEnabled(true);
         btnRefresh.setEnabled(true);
@@ -621,6 +622,14 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
         }
     }
 
+    /** 按语义设置对讲按钮：主题色 999dp 全圆角背景 + 对应文字色（Activity 销毁时静默跳过） */
+    private void setTalkButtonState(int bgAttr, int textAttr) {
+        Context c = getActivity();
+        if (c == null || btnTalk == null) return;
+        btnTalk.setBackground(Md3Ui.rounded(c, Md3Ui.color(c, bgAttr), 999f));
+        btnTalk.setTextColor(Md3Ui.color(c, textAttr));
+    }
+
     @SuppressLint("MissingPermission")
     private void setState(int newState) {
         if (currentState != newState) {
@@ -642,7 +651,7 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
                 case STATE_IDLE:
                     tvStatus.setText("已连接: " + (bluetoothService != null ? bluetoothService.getConnectedDeviceAddress() : ""));
                     btnTalk.setEnabled(true);
-                    btnTalk.setBackgroundColor(ContextCompat.getColor(getActivity(), android.R.color.holo_green_light));
+                    setTalkButtonState(R.attr.md3PrimaryContainer, R.attr.md3OnPrimaryContainer);
                     btnAudioMode.setEnabled(true);
                     if (!isTalkButtonDisabled) {
                         btnTalk.setText("按下对讲");
@@ -655,14 +664,14 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
                         btnTalk.setText("作用中");
                     } else {
                         btnTalk.setText("对讲中,再次按下停止");
-                        btnTalk.setBackgroundColor(ContextCompat.getColor(getActivity(), android.R.color.holo_red_light));
+                        setTalkButtonState(R.attr.md3Primary, R.attr.md3OnPrimary);
                     }
                     break;
                 case STATE_RECEIVING:
                     tvStatus.setText("对方说话中");
                     btnTalk.setEnabled(false);
                     btnTalk.setText("对方说话中");
-                    btnTalk.setBackgroundColor(ContextCompat.getColor(getActivity(), android.R.color.darker_gray));
+                    setTalkButtonState(R.attr.md3SurfaceContainerHighest, R.attr.md3OnSurfaceVariant);
                     btnAudioMode.setEnabled(false);
                     handler.removeCallbacks(receiveTimeoutRunnable);
                     handler.postDelayed(receiveTimeoutRunnable, RECEIVE_TIMEOUT);
@@ -762,7 +771,7 @@ public class TalkbackFragment extends Fragment implements AudioRecorderPlayer.Au
             tvStatus.setText("未连接");
             btnTalk.setEnabled(false);
             btnTalk.setText("按下对讲");
-            btnTalk.setBackgroundColor(ContextCompat.getColor(getActivity(), android.R.color.darker_gray));
+            setTalkButtonState(R.attr.md3SurfaceContainerHighest, R.attr.md3OnSurfaceVariant);
             btnDisconnect.setEnabled(true);
             btnAudioMode.setEnabled(false);
             deviceList.setEnabled(true);

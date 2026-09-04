@@ -10,13 +10,6 @@
         <item name="android:drawablePadding">4dp</item>
         <item name="android:minHeight">48dp</item>
     </style>
-    <!-- 自定义对话框主题（P4 将移除，改为随 Activity 主题） -->
-    <style name="CustomDialogTheme" parent="Theme.AppCompat.Dialog">
-        <item name="android:windowBackground">@color/colorPrimary</item>
-        <item name="android:textColor">@android:color/white</item>
-        <item name="android:textColorPrimary">@android:color/white</item>
-        <item name="colorAccent">@android:color/white</item>
-    </style>
 
     <!-- ==================== 6 套 MD3 配色主题 ====================
          colorPrimary/colorPrimaryDark/colorAccent 供状态栏与默认控件使用；

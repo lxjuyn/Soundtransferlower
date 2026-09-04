@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 图标芯片 40dp：tertiary-container 底 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="@color/md3_tertiary_container" />
-    <corners android:radius="14dp" />
-</shape>

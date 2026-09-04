@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/background_color">
+    android:background="?attr/md3Surface">
 
     <!-- 顶部操作栏 -->
     <LinearLayout
@@ -53,7 +53,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="@color/teal_plain">
+        android:background="?attr/md3Surface">
 
         <TextView
             android:id="@+id/emptyHint"
@@ -61,7 +61,7 @@
             android:layout_height="match_parent"
             android:gravity="center"
             android:text="@string/initialization_hint"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/md3OnSurfaceVariant"
             android:visibility="gone" />
     </FrameLayout>
 

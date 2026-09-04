@@ -204,6 +204,8 @@ public class ChatWorkFragment extends Fragment implements
             }
         }, 300); // 延迟 300ms 等待绑定完成
 
+        // MD3 程序化样式：输入区按钮/图标按 tag 应用（跟随配色主题）
+        Md3Ui.applyTree(view);
         return view;
     }
 
@@ -408,6 +410,7 @@ public class ChatWorkFragment extends Fragment implements
                 recyclerViewMessages.findViewHolderForAdapterPosition(position).itemView : recyclerViewMessages;
         if (anchor == null) return;
         View popupView = LayoutInflater.from(getActivity()).inflate(R.layout.popup_menu_horizontal, null);
+        Md3Ui.applyTree(popupView);
         final PopupWindow popupWindow = new PopupWindow(popupView, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true);
         popupWindow.setOutsideTouchable(true);
         popupWindow.setFocusable(true);

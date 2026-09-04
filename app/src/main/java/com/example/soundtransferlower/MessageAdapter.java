@@ -83,6 +83,8 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.ViewHold
             default: layoutRes = R.layout.item_message_sent;
         }
         View view = LayoutInflater.from(parent.getContext()).inflate(layoutRes, parent, false);
+        // MD3 程序化样式：气泡背景与图标按 tag 应用（跟随配色主题）
+        Md3Ui.applyTree(view);
         return new ViewHolder(view, viewType);
     }
 

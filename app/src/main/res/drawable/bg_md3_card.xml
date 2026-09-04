@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- MD3 分组卡：surface-container 纯 tonal 填充，24dp 圆角，无描边 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="@color/md3_surface_container" />
-    <corners android:radius="24dp" />
-</shape>

@@ -30,6 +30,7 @@ public class DeviceListAdapter extends ArrayAdapter<BluetoothDevice> {
     public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
         if (convertView == null) {
             convertView = inflater.inflate(resource, parent, false);
+            Md3Ui.applyTree(convertView); // 处理 item_main 中 avatar 的 md3-chip-primary tag
         }
 
         BluetoothDevice device = getItem(position);
@@ -43,11 +44,11 @@ public class DeviceListAdapter extends ArrayAdapter<BluetoothDevice> {
             }
             deviceName.setText(name);
             deviceAddress.setText(device.getAddress());
-            int textColor = device.getBondState() == BluetoothDevice.BOND_BONDED ?
-                    parent.getContext().getResources().getColor(android.R.color.black) :
-                    parent.getContext().getResources().getColor(android.R.color.darker_gray);
-            deviceName.setTextColor(textColor);
-            deviceAddress.setTextColor(parent.getContext().getResources().getColor(android.R.color.darker_gray));
+            int onSurface = Md3Ui.color(parent.getContext(), R.attr.md3OnSurface);
+            int variant = Md3Ui.color(parent.getContext(), R.attr.md3OnSurfaceVariant);
+            deviceName.setTextColor(device.getBondState() == BluetoothDevice.BOND_BONDED ?
+                    onSurface : variant);
+            deviceAddress.setTextColor(variant);
             if (avatar != null) avatar.setText("蓝牙");
         }
 

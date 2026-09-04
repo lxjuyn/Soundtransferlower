@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center"
-    android:background="@android:color/white"
+    android:background="?attr/md3Surface"
     android:padding="32dp">
 
     <TextView
@@ -12,7 +12,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textSize="24sp"
-        android:textColor="@android:color/black"
+        android:textColor="?attr/md3OnSurface"
         android:layout_marginBottom="32dp"
         android:text="通话中" />
 
@@ -21,7 +21,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textSize="48sp"
-        android:textColor="@android:color/black"
+        android:textColor="?attr/md3OnSurface"
         android:fontFamily="monospace"
         android:layout_marginBottom="48dp"
         android:text="00:00" />
@@ -45,8 +45,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="挂断"
-            android:background="@android:color/holo_red_dark"
-            android:textColor="@android:color/white"
+            android:tag="md3-btn-danger"
+            android:textColor="?attr/md3OnError"
             android:padding="16dp" />
     </LinearLayout>
 

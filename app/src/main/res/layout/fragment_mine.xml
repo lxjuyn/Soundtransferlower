@@ -5,15 +5,17 @@
     android:orientation="vertical"
     android:padding="16dp">
 
-    <Button
+    <androidx.appcompat.widget.AppCompatButton
         android:id="@+id/btnName"
+        style="@style/Widget.AppCompat.Button.Colored"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="名称"
         android:layout_marginBottom="16dp"/>
 
-    <Button
+    <androidx.appcompat.widget.AppCompatButton
         android:id="@+id/btnAbout"
+        style="@style/Widget.AppCompat.Button.Colored"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="关于"/>

@@ -3,14 +3,14 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@android:color/white">
+    android:background="?attr/md3Surface">
 
     <!-- Toolbar -->
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorPrimaryDark"
+        android:background="?attr/md3Surface"
         android:theme="?attr/actionBarTheme">
 
         <ImageButton
@@ -27,7 +27,7 @@
             android:layout_height="match_parent"
             android:gravity="center"
             android:text="设备名称"
-            android:textColor="#BEF8FF"
+            android:textColor="?attr/md3OnSurface"
             android:textSize="18sp"
             android:textStyle="bold" />
 
@@ -47,7 +47,7 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:padding="8dp"
-        android:background="@color/teal_plain"
+        android:background="?attr/md3Surface"
         android:scrollbars="vertical" />
 
     <!-- 底部输入区域 -->
@@ -56,13 +56,13 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="8dp"
-        android:background="@color/colorPrimaryDark">
+        android:background="?attr/md3SurfaceContainer">
         <ImageButton
             android:id="@+id/btnVoice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:src="@drawable/ic_voice"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:tag="md3-btn-filled"
             android:padding="8dp" />
         <!-- 输入框 -->
         <EditText
@@ -70,7 +70,9 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="3"
-            android:background="@color/colorPrimary"
+            android:background="?attr/md3SurfaceContainerHighest"
+            android:textColor="?attr/md3OnSurface"
+            android:textColorHint="?attr/md3OnSurfaceVariant"
             android:hint="输入消息"
             android:inputType="textMultiLine"
             android:maxLines="5"
@@ -83,7 +85,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="0.5"
-            android:background="@color/colorPrimary"
+            android:tag="md3-btn-filled"
             android:text="发送"
              />
 
@@ -93,7 +95,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="0.5"
-            android:background="@color/colorPrimary"
+            android:tag="md3-btn-filled"
             android:text="更多"
            />
     </LinearLayout>

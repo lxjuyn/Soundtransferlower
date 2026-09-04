@@ -43,6 +43,7 @@ public class CallFragment extends Fragment {
         btnSpeaker.setOnClickListener(v -> toggleSpeaker());
 
         updateSpeakerButton();
+        Md3Ui.applyTree(view); // 处理 md3-btn-danger 等 tag
         return view;
     }
 

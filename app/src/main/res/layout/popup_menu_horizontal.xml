@@ -3,7 +3,7 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:background="@android:color/white"
+    android:background="?attr/md3SurfaceContainerHigh"
     android:elevation="8dp"
     android:padding="8dp">
 
@@ -11,6 +11,7 @@
         android:id="@+id/btnCopy"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:textColor="?attr/md3OnSurface"
         android:text="复制"
         android:background="?attr/selectableItemBackground"
         android:padding="12dp" />
@@ -19,6 +20,7 @@
         android:id="@+id/btnSave"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:textColor="?attr/md3OnSurface"
         android:text="保存"
         android:background="?attr/selectableItemBackground"
         android:padding="12dp" />
@@ -30,5 +32,5 @@
         android:text="删除"
         android:background="?attr/selectableItemBackground"
         android:padding="12dp"
-        android:textColor="@android:color/holo_red_dark" />
+        android:textColor="?attr/md3Error" />
 </LinearLayout>

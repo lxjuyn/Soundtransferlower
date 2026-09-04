@@ -10,7 +10,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="@drawable/bubble_received"
+        android:tag="md3-bubble-received"
         android:padding="8dp"
         android:gravity="center_vertical">
 
@@ -19,13 +19,14 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="12sp"
-            android:textColor="#333"
+            android:textColor="?attr/md3OnSurface"
             android:text="对方" />
 
         <ImageView
             android:id="@+id/ivVoiceIcon"
             android:layout_width="36dp"
             android:layout_height="36dp"
+            android:tag="md3-icon-on-surface"
             android:src="@drawable/ic_voice"
             android:scaleType="centerInside" />
 
@@ -34,7 +35,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="14sp"
-            android:textColor="#333"
+            android:textColor="?attr/md3OnSurface"
             android:layout_marginStart="8dp"
             android:text="0\" />
 
@@ -43,7 +44,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="10sp"
-            android:textColor="#666"
+            android:textColor="?attr/md3OnSurfaceVariant"
             android:layout_marginStart="12dp" />
     </LinearLayout>
 </LinearLayout>

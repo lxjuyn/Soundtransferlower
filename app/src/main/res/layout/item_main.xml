@@ -11,8 +11,8 @@
         android:layout_height="40dp"
         android:gravity="center"
         android:textSize="16sp"
-        android:background="@android:color/darker_gray"
-        android:textColor="@android:color/white"
+        android:tag="md3-chip-primary"
+        android:textColor="?attr/md3OnPrimaryContainer"
         android:layout_marginRight="16dp"/>
 
     <LinearLayout

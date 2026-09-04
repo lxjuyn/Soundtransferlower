@@ -1024,6 +1024,7 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
             View view = inflater.inflate(R.layout.fragment_chat, container, false);
+            Md3Ui.applyTree(view);
             ListView listView = view.findViewById(R.id.deviceListView);
 
             mainActivity = (MainActivityNew) getActivity();
@@ -1073,11 +1074,12 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             Button btnAbout = view.findViewById(R.id.btnAbout);
             btnName.setOnClickListener(v -> showNameDialog());
             btnAbout.setOnClickListener(v -> showAboutDialog());
+            Md3Ui.applyTree(view);
             return view;
         }
 
         private void showNameDialog() {
-            AlertDialog.Builder builder = new AlertDialog.Builder(getActivity(), R.style.CustomDialogTheme);
+            AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
             builder.setTitle("修改蓝牙名称");
             MainActivityNew mainActivity = (MainActivityNew) getActivity();
             String currentName = "";
@@ -1137,7 +1139,7 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             // 用占位符拼接完整文本
             String aboutText = getString(R.string.about, versionName);
 
-            new AlertDialog.Builder(getActivity(), R.style.CustomDialogTheme)
+            new AlertDialog.Builder(getActivity())
                     .setTitle("关于")
                     .setMessage(aboutText)          // 这里传入 CharSequence，不再是资源 ID
                     .setPositiveButton("确定", null)

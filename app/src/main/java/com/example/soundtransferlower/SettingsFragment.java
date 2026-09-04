@@ -12,6 +12,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
@@ -73,6 +74,10 @@ public class SettingsFragment extends Fragment {
         setupThemeRow(view);
         setupSwitches();
 
+        // MD3 程序化样式：卡片/芯片/Hero/开关/图标统一按 tag 应用（跟随配色主题）
+        Md3Ui.applyTree(view);
+        Md3Ui.tintIcon((ImageView) view.findViewById(R.id.btnSettingsBack), R.attr.md3OnSurface);
+
         return view;
     }
 
@@ -115,7 +120,7 @@ public class SettingsFragment extends Fragment {
 
     private void showRenameDialog() {
         if (getActivity() == null) return;
-        AlertDialog.Builder builder = new AlertDialog.Builder(getActivity(), R.style.CustomDialogTheme);
+        AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
         builder.setTitle(R.string.settings_rename_dialog_title);
         BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
         String currentName = adapter != null ? adapter.getName() : "";
@@ -183,7 +188,7 @@ public class SettingsFragment extends Fragment {
                 checked = i;
             }
         }
-        new AlertDialog.Builder(getActivity(), R.style.CustomDialogTheme)
+        new AlertDialog.Builder(getActivity())
                 .setTitle(R.string.settings_timeout_dialog_title)
                 .setSingleChoiceItems(labels, checked, (dialog, which) -> {
                     getActivity().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -248,7 +253,7 @@ public class SettingsFragment extends Fragment {
             labels[i] = getString(PALETTE_LABEL_RES[i]);
             if (PALETTE_IDS[i].equals(current)) checked = i;
         }
-        new AlertDialog.Builder(getActivity(), R.style.CustomDialogTheme)
+        new AlertDialog.Builder(getActivity())
                 .setTitle(R.string.settings_theme)
                 .setSingleChoiceItems(labels, checked, (dialog, which) -> {
                     PaletteHelper.savePalette(getActivity(), PALETTE_IDS[which]);
@@ -292,13 +297,13 @@ public class SettingsFragment extends Fragment {
         if (getActivity() instanceof MainActivityNew) {
             MainActivityNew main = (MainActivityNew) getActivity();
             if (main.isBluetoothConnected()) {
-                dotStatus.setBackgroundResource(R.drawable.shape_md3_dot_on);
+                Md3Ui.applyDot(dotStatus, true);
                 String name = main.getConnectedDeviceName();
                 tvConnectionStatus.setText(name != null
                         ? getString(R.string.settings_status_connected_fmt, name)
                         : getString(R.string.settings_status_connected_fmt, ""));
             } else {
-                dotStatus.setBackgroundResource(R.drawable.shape_md3_dot_off);
+                Md3Ui.applyDot(dotStatus, false);
                 tvConnectionStatus.setText(R.string.settings_status_disconnected);
             }
         }

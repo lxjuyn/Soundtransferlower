@@ -11,21 +11,21 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textSize="12sp"
-        android:textColor="#666666"
+        android:textColor="?attr/md3OnSurfaceVariant"
         android:layout_marginBottom="2dp" />
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="@drawable/bg_message_received"
+        android:tag="md3-bubble-received"
         android:padding="12dp">
 
         <TextView
             android:id="@+id/tvMessage"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/md3OnSurface"
             android:textSize="16sp" />
 
         <TextView
@@ -34,7 +34,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="end"
             android:textSize="12sp"
-            android:textColor="#666666"
+            android:textColor="?attr/md3OnSurfaceVariant"
             android:layout_marginTop="4dp" />
 
     </LinearLayout>
