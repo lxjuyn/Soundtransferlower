@@ -65,12 +65,12 @@
             android:visibility="gone" />
     </FrameLayout>
 
-    <!-- 底部导航 -->
+    <!-- 底部导航（MD3：neutral 容器 + 选中主色） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="?attr/colorPrimary"
+        android:background="?attr/md3SurfaceContainer"
         android:paddingTop="4dp"
         android:paddingBottom="4dp">
 

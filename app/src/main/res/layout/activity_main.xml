@@ -1,91 +1,155 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 对讲页（MD3：状态卡 + 设备卡 + 大号 PTT + tonal 按钮排） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:padding="16dp">
 
-    <TextView
-        android:id="@+id/tvStatus"
+    <!-- 连接状态卡 -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="未连接"
-        android:textAlignment="center"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="16dp"/>
+        android:tag="md3-card"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:layout_marginBottom="16dp">
 
+        <FrameLayout
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:tag="md3-chip-primary">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_md3_bluetooth"
+                android:tag="md3-icon-primary-container" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="14dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/talk_status_label"
+                android:textColor="?attr/md3OnSurfaceVariant"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="未连接"
+                android:textColor="?attr/md3OnSurface"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 设备列表卡 -->
     <TextView
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="已配对设备:"
-        android:textSize="16sp"
-        android:layout_marginBottom="8dp"/>
+        android:layout_marginLeft="4dp"
+        android:layout_marginBottom="8dp"
+        android:text="@string/paired_devices_title"
+        android:textColor="?attr/md3OnSurfaceVariant"
+        android:textSize="13sp"
+        android:textStyle="bold" />
 
-    <!-- 列表区域 (占50%高度) -->
-    <ListView
-        android:id="@+id/deviceList"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginBottom="16dp"/>
+        android:tag="md3-card"
+        android:layout_marginBottom="16dp"
+        android:padding="8dp">
 
-    <!-- 按钮区域 (占50%高度) -->
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
-
-        <LinearLayout
+        <ListView
+            android:id="@+id/deviceList"
             android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:divider="@android:color/transparent"
+            android:dividerHeight="8dp" />
+    </LinearLayout>
+
+    <!-- 大号 PTT 按钮 -->
+    <Button
+        android:id="@+id/btnTalk"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_marginBottom="12dp"
+        android:enabled="false"
+        android:text="按住对讲"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+    <!-- 工具按钮第一排 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="12dp">
+
+        <Button
+            android:id="@+id/btnRefresh"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:layout_weight="1"
+            android:layout_marginRight="6dp"
+            android:tag="md3-btn-tonal"
+            android:text="刷新设备" />
 
-            <Button
-                android:id="@+id/btnRefresh"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="刷新设备列表"
-                android:tag="md3-btn-tonal"
-                android:layout_marginBottom="16dp"/>
+        <Button
+            android:id="@+id/btnAudioMode"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginLeft="6dp"
+            android:enabled="false"
+            android:tag="md3-btn-tonal"
+            android:text="切换听筒" />
+    </LinearLayout>
 
-            <Button
-                android:id="@+id/btnAudioMode"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="切换到听筒模式"
-                android:tag="md3-btn-tonal"
-                android:layout_marginBottom="16dp"
-                android:enabled="false"/>
+    <!-- 工具按钮第二排 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/btnTalk"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="按下对讲"
-                android:layout_marginBottom="16dp"
-                android:enabled="false"/>
+        <Button
+            android:id="@+id/btnDisconnect"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginRight="6dp"
+            android:enabled="false"
+            android:tag="md3-btn-tonal"
+            android:text="断开连接" />
 
-            <Button
-                android:id="@+id/btnDisconnect"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="断开连接"
-                android:tag="md3-btn-tonal"
-                android:layout_marginBottom="16dp"
-                android:enabled="false"/>
-            <Button
-                android:id="@+id/btnDial"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="拨号"
-                android:layout_margin="4dp" />
-            <Button
-                android:id="@+id/btnPair"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:tag="md3-btn-tonal"
-                android:text="蓝牙设置"/>
-        </LinearLayout>
-    </ScrollView>
+        <Button
+            android:id="@+id/btnPair"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginLeft="6dp"
+            android:tag="md3-btn-tonal"
+            android:text="蓝牙设置" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnDial"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="4dp"
+        android:text="拨号" />
 </LinearLayout>

@@ -259,6 +259,7 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             loadFragment(new TalkbackFragment());
             currentMode = BluetoothService.MODE_TALKBACK;
             updateStatusDisplay();
+            updateNavStyles(R.id.btnTalkback);
         });
 
         btnChat.setOnClickListener(v -> {
@@ -266,17 +267,36 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
             loadFragment(new ChatFragment());
             currentMode = BluetoothService.MODE_CHAT;
             updateStatusDisplay();
+            updateNavStyles(R.id.btnChat);
         });
 
         btnMine.setOnClickListener(v -> {
             clearBackStack();
             loadFragment(new MineFragment());
             updateStatusDisplay();
+            updateNavStyles(R.id.btnMine);
         });
+
+        // 初始默认聊天页
+        updateNavStyles(R.id.btnChat);
 
         getSupportFragmentManager().addOnBackStackChangedListener(() -> {
             updateEmptyHintVisibility();
         });
+    }
+
+    /** 底部导航选中态：选中项主色加粗，其余回落 onSurfaceVariant */
+    private void updateNavStyles(int selectedId) {
+        int normal = Md3Ui.color(this, R.attr.md3OnSurfaceVariant);
+        int active = Md3Ui.color(this, R.attr.md3Primary);
+        int[] ids = {R.id.btnTalkback, R.id.btnChat, R.id.btnMine};
+        for (int id : ids) {
+            Button b = findViewById(id);
+            if (b == null) continue;
+            boolean sel = (id == selectedId);
+            b.setTextColor(sel ? active : normal);
+            b.setTypeface(null, sel ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        }
     }
 
     private void updateEmptyHintVisibility() {
@@ -1070,10 +1090,16 @@ public class MainActivityNew extends FragmentActivity implements BluetoothServic
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
             View view = inflater.inflate(R.layout.fragment_mine, container, false);
 
-            Button btnName = view.findViewById(R.id.btnName);
-            Button btnAbout = view.findViewById(R.id.btnAbout);
+            View btnName = view.findViewById(R.id.btnName);
+            View btnAbout = view.findViewById(R.id.btnAbout);
             btnName.setOnClickListener(v -> showNameDialog());
             btnAbout.setOnClickListener(v -> showAboutDialog());
+            // 副文本显示当前蓝牙名称
+            TextView tvMineDeviceName = view.findViewById(R.id.tvMineDeviceName);
+            BluetoothAdapter btAdapter = BluetoothAdapter.getDefaultAdapter();
+            if (btAdapter != null && btAdapter.getName() != null) {
+                tvMineDeviceName.setText(btAdapter.getName());
+            }
             Md3Ui.applyTree(view);
             return view;
         }

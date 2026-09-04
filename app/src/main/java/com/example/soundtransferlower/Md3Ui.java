@@ -176,6 +176,8 @@ public final class Md3Ui {
             case "md3-btn-filled": applyBtn(root, R.attr.md3Primary, R.attr.md3OnPrimary); break;
             case "md3-btn-tonal": applyBtn(root, R.attr.md3PrimaryContainer, R.attr.md3OnPrimaryContainer); break;
             case "md3-btn-danger": applyBtn(root, R.attr.md3Error, R.attr.md3OnError); break;
+            case "md3-circle-primary": applyRounded(root, R.attr.md3PrimaryContainer, 999f); break;
+            case "md3-input": applyRounded(root, R.attr.md3SurfaceContainerHighest, 999f); break;
             case "md3-icon-primary": tintIcon((ImageView) root, R.attr.md3Primary); break;
             case "md3-icon-on-primary": tintIcon((ImageView) root, R.attr.md3OnPrimary); break;
             case "md3-icon-primary-container": tintIcon((ImageView) root, R.attr.md3OnPrimaryContainer); break;

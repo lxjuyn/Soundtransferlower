@@ -13,7 +13,7 @@ import android.widget.TextView;
 import java.util.Locale;
 
 public class CallFragment extends Fragment {
-    private TextView tvCallerName, tvDuration;
+    private TextView tvCallerName, tvDuration, tvCallerAvatar;
     private Button btnHangUp, btnSpeaker;
     private MainActivityNew mainActivity;
     private boolean isSpeakerOn = false;
@@ -23,6 +23,7 @@ public class CallFragment extends Fragment {
         View view = inflater.inflate(R.layout.fragment_call, container, false);
         tvCallerName = view.findViewById(R.id.tvCallerName);
         tvDuration = view.findViewById(R.id.tvDuration);
+        tvCallerAvatar = view.findViewById(R.id.tvCallerAvatar);
         btnHangUp = view.findViewById(R.id.btnHangUp);
         btnSpeaker = view.findViewById(R.id.btnSpeaker);
 
@@ -31,6 +32,9 @@ public class CallFragment extends Fragment {
             String name = getArguments().getString("TARGET_NAME");
             if (name != null) {
                 tvCallerName.setText("正在与 " + name + " 通话");
+                if (tvCallerAvatar != null && !name.isEmpty()) {
+                    tvCallerAvatar.setText(String.valueOf(name.charAt(0)).toUpperCase(Locale.getDefault()));
+                }
             }
         }
 

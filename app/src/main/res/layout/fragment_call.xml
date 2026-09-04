@@ -7,23 +7,36 @@
     android:background="?attr/md3Surface"
     android:padding="32dp">
 
+    <!-- 大号圆形头像（显示对方名首字符） -->
+    <TextView
+        android:id="@+id/tvCallerAvatar"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:gravity="center"
+        android:tag="md3-circle-primary"
+        android:textColor="?attr/md3OnPrimaryContainer"
+        android:textSize="44sp"
+        android:textStyle="bold"
+        android:text="?" />
+
     <TextView
         android:id="@+id/tvCallerName"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textSize="24sp"
         android:textColor="?attr/md3OnSurface"
-        android:layout_marginBottom="32dp"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="16dp"
         android:text="通话中" />
 
     <TextView
         android:id="@+id/tvDuration"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textSize="48sp"
-        android:textColor="?attr/md3OnSurface"
+        android:textSize="40sp"
+        android:textColor="?attr/md3OnSurfaceVariant"
         android:fontFamily="monospace"
-        android:layout_marginBottom="48dp"
+        android:layout_marginBottom="56dp"
         android:text="00:00" />
 
     <LinearLayout
@@ -35,19 +48,23 @@
         <Button
             android:id="@+id/btnSpeaker"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="免提"
-            android:padding="16dp"
-            android:layout_marginEnd="16dp" />
+            android:layout_height="64dp"
+            android:tag="md3-btn-tonal"
+            android:text="@string/call_speaker"
+            android:paddingLeft="24dp"
+            android:paddingRight="24dp"
+            android:layout_marginEnd="24dp" />
 
         <Button
             android:id="@+id/btnHangUp"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="挂断"
+            android:layout_height="64dp"
             android:tag="md3-btn-danger"
-            android:textColor="?attr/md3OnError"
-            android:padding="16dp" />
+            android:text="@string/call_hangup"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:paddingLeft="32dp"
+            android:paddingRight="32dp" />
     </LinearLayout>
 
 </LinearLayout>

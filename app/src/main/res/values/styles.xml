@@ -1,11 +1,11 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- 底部导航按钮样式 -->
+    <!-- 底部导航按钮样式（MD3：选中项由代码上色，未选中走 onSurfaceVariant） -->
     <style name="BottomNavButton" parent="Widget.AppCompat.Button.Borderless">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_weight">1</item>
         <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
-        <item name="android:textColor">@android:color/white</item>
+        <item name="android:textColor">?attr/md3OnSurfaceVariant</item>
         <item name="android:textSize">14sp</item>
         <item name="android:drawablePadding">4dp</item>
         <item name="android:minHeight">48dp</item>

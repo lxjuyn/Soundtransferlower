@@ -17,7 +17,8 @@
             android:id="@+id/btnBack"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:src="@android:drawable/ic_menu_revert"
+            android:src="@drawable/ic_md3_arrow_back"
+            android:tag="md3-icon-on-surface"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="返回" />
 
@@ -35,7 +36,8 @@
             android:id="@+id/btnMenu"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:src="@android:drawable/ic_menu_more"
+            android:src="@drawable/ic_md3_more_vert"
+            android:tag="md3-icon-on-surface"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="菜单" />
     </androidx.appcompat.widget.Toolbar>
@@ -50,19 +52,21 @@
         android:background="?attr/md3Surface"
         android:scrollbars="vertical" />
 
-    <!-- 底部输入区域 -->
+    <!-- 底部输入区域：圆角卡片栏 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_margin="12dp"
         android:orientation="horizontal"
         android:padding="8dp"
-        android:background="?attr/md3SurfaceContainer">
+        android:gravity="center_vertical"
+        android:tag="md3-card">
         <ImageButton
             android:id="@+id/btnVoice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:src="@drawable/ic_voice"
-            android:tag="md3-btn-filled"
+            android:tag="md3-btn-tonal"
             android:padding="8dp" />
         <!-- 输入框 -->
         <EditText
@@ -70,21 +74,25 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="3"
-            android:background="?attr/md3SurfaceContainerHighest"
+            android:tag="md3-input"
+            android:layout_marginLeft="8dp"
+            android:layout_marginRight="8dp"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:paddingTop="9dp"
+            android:paddingBottom="9dp"
             android:textColor="?attr/md3OnSurface"
             android:textColorHint="?attr/md3OnSurfaceVariant"
             android:hint="输入消息"
             android:inputType="textMultiLine"
             android:maxLines="5"
-            android:minLines="1"
-            android:padding="8dp" />
+            android:minLines="1" />
 
         <!-- 发送按钮 -->
         <Button
             android:id="@+id/btnSend"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="0.5"
             android:tag="md3-btn-filled"
             android:text="发送"
              />
@@ -92,10 +100,10 @@
         <!-- 更多按钮 -->
         <Button
             android:id="@+id/btnMore"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="0.5"
-            android:tag="md3-btn-filled"
+            android:layout_marginLeft="6dp"
+            android:tag="md3-btn-tonal"
             android:text="更多"
            />
     </LinearLayout>

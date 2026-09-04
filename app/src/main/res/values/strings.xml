@@ -60,4 +60,17 @@
     <string name="palette_rose">绯樱</string>
     <string name="palette_amber">琥珀</string>
     <string name="palette_mono">石墨</string>
+
+    <!-- 页面 MD3 化新增 -->
+    <string name="talk_status_label">对讲状态</string>
+    <string name="paired_devices_title">已配对设备</string>
+    <string name="chat_tab_title">蓝牙设备</string>
+    <string name="chat_tab_hint">选择一台已配对设备开始聊天</string>
+    <string name="mine_section">账户</string>
+    <string name="mine_bt_name">蓝牙名称</string>
+    <string name="mine_bt_name_sub">对外显示的蓝牙名称</string>
+    <string name="mine_about">关于</string>
+    <string name="mine_about_sub">版权与开源信息</string>
+    <string name="call_speaker">免提</string>
+    <string name="call_hangup">挂断</string>
 </resources>
