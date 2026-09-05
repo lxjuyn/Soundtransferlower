@@ -50,7 +50,11 @@ public class TalkbackFragment extends Fragment
     // 对讲无活动断开阈值（毫秒），从设置页读取（默认 50 秒）
     private long inactivityThresholdDisconnect = INACTIVITY_THRESHOLD_DISCONNECT_DEFAULT;
     private static final long REFRESH_INTERVAL = 5000;
-    private static final long CONNECTION_RETRY_DELAY = 500;
+    private static final long CONNECTION_RETRY_DELAY = 1000;
+    // 重连退避：连续失败次数越多间隔越长（1s→2s→4s），达到上限后停止自动重连，
+    // 打破两端互相重连的“乒乓”死循环
+    private int reconnectAttempts = 0;
+    private static final int MAX_RECONNECT_ATTEMPTS = 3;
 
     private static final int STATE_IDLE = 0;
     private static final int STATE_TALKING = 1;
@@ -442,13 +446,20 @@ public class TalkbackFragment extends Fragment
             stateChangeCount++;
             LogUtil.d(TAG, "状态切换计数: " + stateChangeCount);
             if (stateChangeCount >= MAX_STATE_CHANGES) {
-                LogUtil.d(TAG, "达到最大状态切换次数，将断开重连");
                 stateChangeCount = 0;
+                if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                    LogUtil.w(TAG, "连续重连 " + reconnectAttempts + " 次失败，停止自动重连");
+                    playConnectionSound();
+                    if (targetDevice != null) disconnect();
+                    return;
+                }
+                long delay = CONNECTION_RETRY_DELAY * (1L << reconnectAttempts); // 1s/2s/4s
+                reconnectAttempts++;
+                LogUtil.d(TAG, "断开重连（第 " + reconnectAttempts + " 次，延迟 " + delay + "ms）");
                 playConnectionSound();
                 if (targetDevice != null) {
                     disconnect();
-                    mainHandler.postDelayed(() -> connectToDevice(targetDevice),
-                            CONNECTION_RETRY_DELAY);
+                    mainHandler.postDelayed(() -> connectToDevice(targetDevice), delay);
                 }
             }
         }

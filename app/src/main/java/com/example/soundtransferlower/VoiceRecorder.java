@@ -250,6 +250,8 @@ public class VoiceRecorder {
             handler.post(playListener::onPlayStart);
         }
 
+        if (playbackExecutor.isShutdown()) return;
+        try {
         playbackExecutor.execute(() -> {
             try {
                 int offset = 0;
@@ -307,6 +309,9 @@ public class VoiceRecorder {
                 if (playListener != null) playListener.onPlayFinish();
             });
         });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            // release 与在途回调竞争：忽略
+        }
     }
 
     public void stopPlayback() {

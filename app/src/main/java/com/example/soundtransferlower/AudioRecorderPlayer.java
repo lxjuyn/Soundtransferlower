@@ -250,7 +250,9 @@ public class AudioRecorderPlayer {
     public void playAudio(byte[] encodedData, int length) {
         if (audioTrack == null || length <= 0 || opusDecoder == null) return;
 
-        playbackExecutor.execute(() -> {
+        if (playbackExecutor.isShutdown()) return; // release 后仍有在途回调时防 RejectedExecutionException
+        try {
+            playbackExecutor.execute(() -> {
             try {
                 // 解码输出 short[]
                 short[] pcmShorts = new short[FRAME_SAMPLES];
@@ -284,7 +286,10 @@ public class AudioRecorderPlayer {
             } catch (Exception e) {
                 LogUtil.e(TAG, "解码错误: " + e.getMessage());
             }
-        });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            // release 与在途回调竞争：忽略
+        }
     }
 
     public void release() {

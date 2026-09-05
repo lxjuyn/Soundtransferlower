@@ -352,6 +352,12 @@ public class BluetoothFileTransferService extends Service implements IFileTransf
 
         @Override
         public void run() {
+            if (inputStream == null || outputStream == null) {
+                // 构造阶段获取流失败：直接终止传输，避免 NPE 杀死进程
+                LogUtil.e(TAG, "socket 流未创建，传输终止");
+                notifyComplete(false, null);
+                return;
+            }
             try {
                 if ("SEND".equals(action)) {
                     File file = new File(filePath);

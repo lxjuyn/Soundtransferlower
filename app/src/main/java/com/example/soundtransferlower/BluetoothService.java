@@ -76,17 +76,17 @@ public class BluetoothService extends Service implements IBluetoothService {
     private AcceptThread acceptThread;
     private ConnectThread connectThread;
     private ConnectedThread connectedThread;
-    private int state;
+    private volatile int state;
     /** 聊天记录异步落盘（单线程串行，保证追加顺序） */
     private final java.util.concurrent.ExecutorService saveExecutor =
             java.util.concurrent.Executors.newSingleThreadExecutor();
     private String connectedDeviceAddress;
     private String connectedDeviceName;
 
-    private boolean isInitiator = false;
+    private volatile boolean isInitiator = false;
     private String targetDeviceAddress = null;
 
-    private int currentMode = MODE_CHAT;
+    private volatile int currentMode = MODE_CHAT;
 
     private CopyOnWriteArrayList<IMessageCallback.MessageCallback> messageCallbacks = new CopyOnWriteArrayList<>();
 
@@ -594,9 +594,9 @@ public class BluetoothService extends Service implements IBluetoothService {
         connectedDeviceName = PermissionHelper.safeName(this, device);
         isInitiator = false;
         targetDeviceAddress = null;
+        setState(STATE_CONNECTED);   // 先落状态再通知：观察者在回调里查 isServiceReady 才不会误判
 
         notifyConnectionStatusChanged(STATE_CONNECTED, PermissionHelper.safeName(this, device));
-        setState(STATE_CONNECTED);
     }
 
     private void saveMessageToFile(String message, String deviceAddress, boolean isSent) {
@@ -772,6 +772,11 @@ public class BluetoothService extends Service implements IBluetoothService {
         }
 
         public void run() {
+            if (inputStream == null || outputStream == null) {
+                // 构造阶段获取流失败：直接走连接丢失，避免 read 上的 NPE 杀死进程
+                connectionLost();
+                return;
+            }
             byte[] buffer = new byte[4096];
             java.io.ByteArrayOutputStream pending = new java.io.ByteArrayOutputStream();
             int bytes;
@@ -957,8 +962,8 @@ public class BluetoothService extends Service implements IBluetoothService {
         public void cancel() {
             isRunning = false;
             try {
-                socket.close();
-            } catch (IOException e) {
+                if (socket != null) socket.close();
+            } catch (Exception e) {
                 LogUtil.e(TAG, "close() of connect socket failed", e);
             }
         }

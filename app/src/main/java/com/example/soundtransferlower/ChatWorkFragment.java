@@ -319,23 +319,38 @@ public class ChatWorkFragment extends Fragment implements
         historyLoaded = false;
         deleteHandler.removeCallbacks(deleteResetRunnable);
         nonTextHandler.removeCallbacks(resetNonTextDataCount);
+        if (fileTimeoutHandler != null) {
+            fileTimeoutHandler.removeCallbacksAndMessages(null);
+        }
         stopVoicePlayback();
         voiceBlinkHandler.removeCallbacksAndMessages(null);
         if (voiceRecorder != null) {
             voiceRecorder.release();
             voiceRecorder = null;
         }
+        // 接收确认框是 setCancelable(false)：不 dismiss 会泄漏窗口
+        if (receiveDialog != null && receiveDialog.isShowing()) {
+            receiveDialog.dismiss();
+        }
+        receiveDialog = null;
 
+        boolean activityAlive = getActivity() != null;
         if (fileTransferBound) {
-            fileTransferService.unregisterCallback(this);
-            getActivity().unbindService(fileTransferConnection);
+            try {
+                if (fileTransferService != null) fileTransferService.unregisterCallback(this);
+                if (activityAlive) getActivity().unbindService(fileTransferConnection);
+            } catch (Exception ignore) {}
             fileTransferBound = false;
         }
-        getActivity().stopService(new Intent(getActivity(), BluetoothFileTransferService.class));
-
-        if (serviceBound && getActivity() != null) {
-            bluetoothService.unregisterCallback(this);
-            getActivity().unbindService(serviceConnection);
+        if (activityAlive) {
+            getActivity().stopService(new Intent(getActivity(), BluetoothFileTransferService.class));
+        }
+        // 无条件注销回调：Activity 先于 Fragment 销毁时旧判断会跳过，导致服务长期持有 Fragment
+        if (bluetoothService != null) {
+            try { bluetoothService.unregisterCallback(this); } catch (Exception ignore) {}
+        }
+        if (serviceBound && activityAlive) {
+            try { getActivity().unbindService(serviceConnection); } catch (Exception ignore) {}
             serviceBound = false;
         }
     }
@@ -781,8 +796,11 @@ public class ChatWorkFragment extends Fragment implements
         isFileSender = true;
         Toast.makeText(getActivity(), duration > 0 ? "发送语音..." : "已发送文件请求...",
                 Toast.LENGTH_SHORT).show();
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (isWaitingForAccept) {
+        if (fileTimeoutHandler == null) {
+            fileTimeoutHandler = new Handler(Looper.getMainLooper());
+        }
+        fileTimeoutHandler.postDelayed(() -> {
+            if (isWaitingForAccept && isAdded() && getActivity() != null) {
                 isWaitingForAccept = false;
                 localFilePath = null;
                 Toast.makeText(getActivity(), "对方未响应", Toast.LENGTH_SHORT).show();
@@ -793,6 +811,11 @@ public class ChatWorkFragment extends Fragment implements
             }
         }, 30000);
     }
+
+    /** 文件请求 30s 超时任务句柄：onDestroyView 统一取消，防 detach 后 NPE */
+    private Handler fileTimeoutHandler;
+    /** 接收确认对话框：Fragment 销毁时统一 dismiss，防窗口泄漏 */
+    private android.app.AlertDialog receiveDialog;
 
     private void handleFileRequest(String fileName, long size, int duration) {
         if (getActivity() == null) return;
@@ -888,6 +911,7 @@ public class ChatWorkFragment extends Fragment implements
             voiceRecorder = new VoiceRecorder(new VoiceRecorder.OnVoiceRecordListener() {
                 @Override
                 public void onRecordStart() {
+                    if (!isAdded() || getActivity() == null) return;
                     getActivity().runOnUiThread(() -> {
                         etMessage.setVisibility(View.GONE);
                         btnSend.setVisibility(View.GONE);
@@ -901,6 +925,7 @@ public class ChatWorkFragment extends Fragment implements
 
                 @Override
                 public void onRecordFinish(File voiceFile, int durationSeconds) {
+                    if (!isAdded() || getActivity() == null) return; // 录音结束瞬间已退出页面
                     currentVoiceDuration = durationSeconds;
                     sendVoiceFile(voiceFile, durationSeconds);
                     getActivity().runOnUiThread(() -> {
@@ -914,6 +939,7 @@ public class ChatWorkFragment extends Fragment implements
                 @Override
                 public void onRecordError(String error) {
                     LogUtil.e(TAG, "录音错误: " + error);
+                    if (!isAdded() || getActivity() == null) return;
                     getActivity().runOnUiThread(() -> {
                         Toast.makeText(getActivity(), "录音失败: " + error, Toast.LENGTH_SHORT).show();
                         etMessage.setVisibility(View.VISIBLE);
@@ -1762,6 +1788,7 @@ public class ChatWorkFragment extends Fragment implements
     }
 
     public void sendPendingMessageDirectly(PendingMessage msg) {
+        if (!isAdded() || getActivity() == null) return; // detach 后 Toast 会 NPE
         if (msg.type == PendingMessage.TYPE_TEXT) {
             if (isServiceReady()) {
                 doSendTextMessage(msg.content);
@@ -1812,11 +1839,24 @@ public class ChatWorkFragment extends Fragment implements
         }
     }
 
+    /** 待发消息是否在发送中（防三条路径并发/重复触发同一消息） */
+    private final java.util.Set<String> sendingPendingIds = new java.util.HashSet<>();
+
     public void attemptSendPendingForDevice(String deviceAddress) {
+        // 地址必须与当前聊天会话一致，避免把别的设备的待发消息错发到当前连接
+        if (deviceAddress == null || !deviceAddress.equals(this.deviceAddress)) return;
+        if (bluetoothService == null
+                || bluetoothService.getState() != IBluetoothService.STATE_CONNECTED) return;
         List<PendingMessage> list = pendingManager.getMessagesForDevice(deviceAddress);
         for (PendingMessage msg : list) {
             if (msg.type == PendingMessage.TYPE_TEXT || msg.type == PendingMessage.TYPE_VOICE) {
-                sendPendingMessageDirectly(msg);
+                if (sendingPendingIds.add(msg.id)) {
+                    try {
+                        sendPendingMessageDirectly(msg);
+                    } finally {
+                        sendingPendingIds.remove(msg.id);
+                    }
+                }
             }
         }
     }
