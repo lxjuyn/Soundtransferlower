@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="?attr/md3Surface">
 
-    <!-- 顶部操作栏 -->
+    <!-- 顶部操作栏（T0 选型：方案 A surface 统一风格） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorPrimary"
+        android:background="?attr/md3Surface"
         android:orientation="horizontal"
         android:padding="8dp"
         android:gravity="center_vertical">
@@ -17,12 +18,13 @@
         <!-- 返回键 -->
         <ImageButton
             android:id="@+id/btnBack"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:src="@android:drawable/ic_menu_rotate"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_md3_arrow_back"
+            android:tag="md3-icon-on-surface"
+            android:background="@drawable/bg_md3_back_btn"
             android:contentDescription="@string/back_button_desc"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:padding="8dp"/>
+            android:padding="9dp"/>
 
         <!-- 标题 -->
         <TextView
@@ -32,19 +34,20 @@
             android:layout_weight="1"
             android:gravity="center"
             android:text="@string/app_name"
-            android:textColor="@android:color/white"
+            android:textColor="?attr/md3OnSurface"
             android:textSize="18sp"
             android:textStyle="bold"/>
 
         <!-- 菜单键 -->
         <ImageButton
             android:id="@+id/btnMenu"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:src="@android:drawable/ic_menu_more"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_md3_more_vert"
+            android:tag="md3-icon-on-surface"
+            android:background="@drawable/bg_md3_back_btn"
             android:contentDescription="@string/menu_button_desc"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:padding="8dp"/>
+            android:padding="9dp"/>
     </LinearLayout>
 
     <!-- Fragment容器 -->
@@ -65,28 +68,110 @@
             android:visibility="gone" />
     </FrameLayout>
 
-    <!-- 底部导航（MD3：neutral 容器 + 选中主色） -->
-    <LinearLayout
+    <!-- 悬浮胶囊底栏（参考钉钉：大椭圆包全项，选中项套主题色小药丸） -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:background="?attr/md3SurfaceContainer"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp">
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="10dp">
 
-        <Button
-            android:id="@+id/btnTalkback"
-            style="@style/BottomNavButton"
-            android:text="@string/talkback" />
+        <LinearLayout
+            android:id="@+id/navPillBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:background="@drawable/bg_md3_nav_pill"
+            android:tag="md3-nav-bar">
 
-        <Button
-            android:id="@+id/btnChat"
-            style="@style/BottomNavButton"
-            android:text="@string/chat" />
+            <!-- 对讲 -->
+            <LinearLayout
+                android:id="@+id/btnTalkback"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp">
 
-        <Button
-            android:id="@+id/btnMine"
-            style="@style/BottomNavButton"
-            android:text="@string/mine" />
-    </LinearLayout>
+                <ImageView
+                    android:id="@+id/navIconTalkback"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@drawable/ic_md3_mic"
+                    app:srcCompat="@drawable/ic_md3_mic" />
+
+                <TextView
+                    android:id="@+id/navLabelTalkback"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="@string/talkback"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- 聊天 -->
+            <LinearLayout
+                android:id="@+id/btnChat"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp">
+
+                <ImageView
+                    android:id="@+id/navIconChat"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@drawable/ic_md3_chat"
+                    app:srcCompat="@drawable/ic_md3_chat" />
+
+                <TextView
+                    android:id="@+id/navLabelChat"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="@string/chat"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- 我的 -->
+            <LinearLayout
+                android:id="@+id/btnMine"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp">
+
+                <ImageView
+                    android:id="@+id/navIconMine"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@drawable/ic_md3_person"
+                    app:srcCompat="@drawable/ic_md3_person" />
+
+                <TextView
+                    android:id="@+id/navLabelMine"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="@string/mine"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
 </LinearLayout>

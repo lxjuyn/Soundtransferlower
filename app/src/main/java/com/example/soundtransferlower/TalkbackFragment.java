@@ -203,6 +203,12 @@ public class TalkbackFragment extends Fragment
 
         if (btnDial != null) btnDial.setVisibility(View.GONE);
 
+        // 页面初建成即把不可用按钮置灰（消除默认方形按钮的瞬间闪现）
+        setTalkButtonState(R.attr.md3SurfaceContainerHighest, R.attr.md3OnSurfaceVariant);
+        btnTalk.setEnabled(false);
+        setActionEnabled(btnAudioMode, false);
+        setActionEnabled(btnDisconnect, false);
+
         mainHandler.postDelayed(() -> {
             isLoading = false;
             setInitialState();
@@ -419,7 +425,7 @@ public class TalkbackFragment extends Fragment
         btnTalk.setEnabled(false);
         btnTalk.setText("按下对讲");
         setTalkButtonState(R.attr.md3SurfaceContainerHighest, R.attr.md3OnSurfaceVariant);
-        btnAudioMode.setEnabled(false);
+        setActionEnabled(btnAudioMode, false);
         deviceList.setEnabled(true);
         btnRefresh.setEnabled(true);
         btnPair.setEnabled(true);
@@ -476,14 +482,14 @@ public class TalkbackFragment extends Fragment
                     tvStatus.setText("已连接: " + addr);
                     btnTalk.setEnabled(true);
                     setTalkButtonState(R.attr.md3PrimaryContainer, R.attr.md3OnPrimaryContainer);
-                    btnAudioMode.setEnabled(true);
+                    setActionEnabled(btnAudioMode, true);
                     if (!isTalkButtonDisabled) {
                         btnTalk.setText("按下对讲");
                     }
                     break;
                 case STATE_TALKING:
                     tvStatus.setText("我方说话中");
-                    btnAudioMode.setEnabled(false);
+                    setActionEnabled(btnAudioMode, false);
                     if (isTalkButtonDisabled) {
                         btnTalk.setText("作用中");
                     } else {
@@ -496,7 +502,7 @@ public class TalkbackFragment extends Fragment
                     btnTalk.setEnabled(false);
                     btnTalk.setText("对方说话中");
                     setTalkButtonState(R.attr.md3SurfaceContainerHighest, R.attr.md3OnSurfaceVariant);
-                    btnAudioMode.setEnabled(false);
+                    setActionEnabled(btnAudioMode, false);
                     mainHandler.removeCallbacks(receiveTimeoutRunnable);
                     mainHandler.postDelayed(receiveTimeoutRunnable, RECEIVE_TIMEOUT);
                     break;
@@ -566,6 +572,13 @@ public class TalkbackFragment extends Fragment
     private void resetInactivityTimer() {
         lastActivityTime = System.currentTimeMillis();
         LogUtil.d(TAG, "重置活动检测计时器");
+    }
+
+    /** 可用性按钮联动：enabled=true → 主题色椭圆；false → 中性灰椭圆 */
+    private void setActionEnabled(android.widget.Button btn, boolean enabled) {
+        if (btn == null) return;
+        btn.setEnabled(enabled);
+        Md3Ui.applyBtnState(btn, enabled);
     }
 
     /** 按主题配色设置 PTT 按钮状态（圆角药丸 + 前景文字） */

@@ -160,6 +160,31 @@ public final class Md3Ui {
         ImageViewCompat.setImageTintList(iv, ColorStateList.valueOf(color(iv.getContext(), colorAttr)));
     }
 
+
+    /** 底栏 tab 药丸背景：selected=主题色容器；按压态只是淡色盖层（无 elevation，无方形阴影） */
+    public static android.graphics.drawable.Drawable navTabBg(Context c, boolean selected) {
+        int base = selected ? color(c, R.attr.md3PrimaryContainer) : 0x00000000;
+        android.graphics.drawable.StateListDrawable s = new android.graphics.drawable.StateListDrawable();
+        android.graphics.drawable.GradientDrawable normal = rounded(c, base, 999f);
+        android.graphics.drawable.GradientDrawable pressed = rounded(c,
+                (color(c, R.attr.md3OnSurface) & 0x00FFFFFF) | 0x1F000000, 999f); // 12% 盖层
+        s.addState(new int[]{android.R.attr.state_pressed}, pressed);
+        s.addState(android.util.StateSet.WILD_CARD, normal);
+        return s;
+    }
+
+    /** 功能按钮可用/不可用统一视觉：可用=主题色容器椭圆，不可用=中性灰椭圆 */
+    public static void applyBtnState(View v, boolean enabled) {
+        Context c = v.getContext();
+        int bgAttr = enabled ? R.attr.md3PrimaryContainer : R.attr.md3SurfaceContainerHighest;
+        int fgAttr = enabled ? R.attr.md3OnPrimaryContainer : R.attr.md3OnSurfaceVariant;
+        v.setAlpha(enabled ? 1f : 0.7f);
+        setBg(v, rounded(c, color(c, bgAttr), 999f));
+        if (v instanceof android.widget.TextView) {
+            ((android.widget.TextView) v).setTextColor(color(c, fgAttr));
+        }
+    }
+
     // ==================== tag 驱动的批量应用 ====================
     // XML 中给视图打 android:tag，再对根视图调用 applyTree 即可，
     // 免去逐控件写代码；视图原有 android:background 会被覆盖。
@@ -188,6 +213,18 @@ public final class Md3Ui {
             case "md3-btn-danger": applyBtn(root, R.attr.md3Error, R.attr.md3OnError); break;
             case "md3-circle-primary": applyRounded(root, R.attr.md3PrimaryContainer, 999f); break;
             case "md3-input": applyRounded(root, R.attr.md3SurfaceContainerHighest, 999f); break;
+            case "md3-nav-bar":
+                // 悬浮胶囊底栏：bg_md3_nav_pill 已在 inflate 期确定圆形轮廓（阴影随形状），
+                // 这里只改颜色以跟随配色主题；重置 outline provider 防御旧机型的轮廓缓存
+                if (root.getBackground() instanceof android.graphics.drawable.GradientDrawable) {
+                    ((android.graphics.drawable.GradientDrawable) root.getBackground().mutate())
+                            .setColor(color(root.getContext(), R.attr.md3SurfaceContainerHigh));
+                }
+                if (android.os.Build.VERSION.SDK_INT >= 21) {
+                    root.setElevation(dp(root.getContext(), 6f));
+                    root.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
+                }
+                break;
             case "md3-icon-primary": tintIcon((ImageView) root, R.attr.md3Primary); break;
             case "md3-icon-on-primary": tintIcon((ImageView) root, R.attr.md3OnPrimary); break;
             case "md3-icon-primary-container": tintIcon((ImageView) root, R.attr.md3OnPrimaryContainer); break;

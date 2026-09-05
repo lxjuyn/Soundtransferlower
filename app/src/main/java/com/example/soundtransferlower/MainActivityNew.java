@@ -174,6 +174,8 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
         AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main_new);
+        // MD3 程序化样式：悬浮胶囊底栏底、顶栏图标着色按 tag 应用
+        Md3Ui.applyTree(getWindow().getDecorView());
 
         SharedPreferences prefs = getSharedPreferences("settings", Context.MODE_PRIVATE);
         LogUtil.setEnableLog(prefs.getBoolean("enable_log", false));
@@ -329,9 +331,9 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
     }
 
     private void setupBottomNavigation() {
-        Button btnTalkback = findViewById(R.id.btnTalkback);
-        Button btnChat = findViewById(R.id.btnChat);
-        Button btnMine = findViewById(R.id.btnMine);
+        View btnTalkback = findViewById(R.id.btnTalkback);
+        View btnChat = findViewById(R.id.btnChat);
+        View btnMine = findViewById(R.id.btnMine);
 
         btnTalkback.setOnClickListener(v -> {
             clearBackStack();
@@ -420,17 +422,30 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
         return (name == null || name.isEmpty()) ? bluetoothService.getConnectedDeviceAddress() : name;
     }
 
-    /** 底部导航选中态：选中项主色加粗，其余回落 onSurfaceVariant */
+    /** 底部导航选中态：选中项套主题色小药丸（primary-container），未选中透明+变体色 */
     private void updateNavStyles(int selectedId) {
-        int normal = Md3Ui.color(this, R.attr.md3OnSurfaceVariant);
-        int active = Md3Ui.color(this, R.attr.md3Primary);
-        int[] ids = {R.id.btnTalkback, R.id.btnChat, R.id.btnMine};
-        for (int id : ids) {
-            Button b = findViewById(id);
-            if (b == null) continue;
-            boolean sel = (id == selectedId);
-            b.setTextColor(sel ? active : normal);
-            b.setTypeface(null, sel ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        int variant = Md3Ui.color(this, R.attr.md3OnSurfaceVariant);
+        int activeText = Md3Ui.color(this, R.attr.md3OnPrimaryContainer);
+        int[][] tabs = {
+                {R.id.btnTalkback, R.id.navIconTalkback, R.id.navLabelTalkback},
+                {R.id.btnChat, R.id.navIconChat, R.id.navLabelChat},
+                {R.id.btnMine, R.id.navIconMine, R.id.navLabelMine}
+        };
+        int padH = (int) (getResources().getDisplayMetrics().density * 8);
+        for (int[] t : tabs) {
+            View tab = findViewById(t[0]);
+            if (tab == null) continue;
+            boolean sel = (t[0] == selectedId);
+            Md3Ui.setBg(tab, Md3Ui.navTabBg(this, sel));
+            tab.setPadding(padH, tab.getPaddingTop(), padH, tab.getPaddingBottom());
+            int tint = sel ? activeText : variant;
+            android.widget.ImageView icon = findViewById(t[1]);
+            if (icon != null) icon.setColorFilter(tint);
+            android.widget.TextView label = findViewById(t[2]);
+            if (label != null) {
+                label.setTextColor(tint);
+                label.setTypeface(null, sel ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+            }
         }
     }
 

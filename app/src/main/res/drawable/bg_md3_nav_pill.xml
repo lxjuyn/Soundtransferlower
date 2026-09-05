@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 悬浮底栏大椭圆：inflate 时就带圆角轮廓（阴影随形状），颜色由 Md3Ui 运行时改写 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+    <corners android:radius="999dp" />
+</shape>
