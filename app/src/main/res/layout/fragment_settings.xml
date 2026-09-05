@@ -30,7 +30,7 @@
                 android:tag="md3-back"
                 android:contentDescription="@string/back_button_desc"
                 android:padding="9dp"
-                android:src="@drawable/ic_md3_arrow_back" />
+                app:srcCompat="@drawable/ic_md3_arrow_back" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -156,7 +156,7 @@
                         android:layout_height="22dp"
                         android:layout_gravity="center"
                         android:tag="md3-icon-primary-container"
-                        android:src="@drawable/ic_md3_bluetooth" />
+                        app:srcCompat="@drawable/ic_md3_bluetooth" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -226,7 +226,7 @@
                         android:layout_height="22dp"
                         android:layout_gravity="center"
                         android:tag="md3-icon-secondary-container"
-                        android:src="@drawable/ic_md3_refresh" />
+                        app:srcCompat="@drawable/ic_md3_refresh" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -293,7 +293,7 @@
                         android:layout_height="22dp"
                         android:layout_gravity="center"
                         android:tag="md3-icon-tertiary-container"
-                        android:src="@drawable/ic_md3_timer" />
+                        app:srcCompat="@drawable/ic_md3_timer" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -332,7 +332,7 @@
                     android:layout_height="18dp"
                     android:layout_marginLeft="4dp"
                     android:tag="md3-icon-on-surface-variant"
-                    android:src="@drawable/ic_md3_chevron_right" />
+                    app:srcCompat="@drawable/ic_md3_chevron_right" />
             </LinearLayout>
         </LinearLayout>
 
@@ -379,7 +379,7 @@
                         android:layout_height="22dp"
                         android:layout_gravity="center"
                         android:tag="md3-icon-primary-container"
-                        android:src="@drawable/ic_md3_notifications" />
+                        app:srcCompat="@drawable/ic_md3_notifications" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -443,7 +443,7 @@
                         android:layout_height="22dp"
                         android:layout_gravity="center"
                         android:tag="md3-icon-secondary-container"
-                        android:src="@drawable/ic_md3_vibration" />
+                        app:srcCompat="@drawable/ic_md3_vibration" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -525,7 +525,7 @@
                         android:layout_height="22dp"
                         android:layout_gravity="center"
                         android:tag="md3-icon-secondary-container"
-                        android:src="@drawable/ic_md3_palette" />
+                        app:srcCompat="@drawable/ic_md3_palette" />
                 </FrameLayout>
 
                 <LinearLayout
@@ -564,7 +564,7 @@
                     android:layout_height="18dp"
                     android:layout_marginLeft="4dp"
                     android:tag="md3-icon-on-surface-variant"
-                    android:src="@drawable/ic_md3_chevron_right" />
+                    app:srcCompat="@drawable/ic_md3_chevron_right" />
             </LinearLayout>
         </LinearLayout>
 
@@ -611,7 +611,7 @@
                         android:layout_height="22dp"
                         android:layout_gravity="center"
                         android:tag="md3-icon-primary-container"
-                        android:src="@drawable/ic_md3_info" />
+                        app:srcCompat="@drawable/ic_md3_info" />
                 </FrameLayout>
 
                 <TextView
@@ -661,7 +661,7 @@
                         android:layout_height="22dp"
                         android:layout_gravity="center"
                         android:tag="md3-icon-secondary-container"
-                        android:src="@drawable/ic_md3_person" />
+                        app:srcCompat="@drawable/ic_md3_person" />
                 </FrameLayout>
 
                 <TextView
@@ -714,7 +714,7 @@
                         android:layout_height="22dp"
                         android:layout_gravity="center"
                         android:tag="md3-icon-tertiary-container"
-                        android:src="@drawable/ic_md3_link" />
+                        app:srcCompat="@drawable/ic_md3_link" />
                 </FrameLayout>
 
                 <TextView
@@ -739,7 +739,7 @@
                     android:layout_height="18dp"
                     android:layout_marginLeft="4dp"
                     android:tag="md3-icon-on-surface-variant"
-                    android:src="@drawable/ic_md3_chevron_right" />
+                    app:srcCompat="@drawable/ic_md3_chevron_right" />
             </LinearLayout>
 
             <View
@@ -771,7 +771,7 @@
                         android:layout_height="22dp"
                         android:layout_gravity="center"
                         android:tag="md3-icon-primary-container"
-                        android:src="@drawable/ic_md3_code" />
+                        app:srcCompat="@drawable/ic_md3_code" />
                 </FrameLayout>
 
                 <LinearLayout

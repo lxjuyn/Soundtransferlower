@@ -235,7 +235,11 @@ public class BluetoothFileTransferService extends Service implements IFileTransf
         public AcceptThread() {
             BluetoothServerSocket tmp = null;
             try {
-                tmp = bluetoothAdapter.listenUsingRfcommWithServiceRecord(APP_NAME, MY_UUID);
+                if (bluetoothAdapter == null) {
+                    failed = true;
+                } else {
+                    tmp = bluetoothAdapter.listenUsingRfcommWithServiceRecord(APP_NAME, MY_UUID);
+                }
             } catch (IOException e) {
                 LogUtil.e(TAG, "listen failed", e);
                 failed = true;

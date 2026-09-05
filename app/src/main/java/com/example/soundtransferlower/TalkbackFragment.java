@@ -559,7 +559,7 @@ public class TalkbackFragment extends Fragment
     private void setTalkButtonState(int bgAttr, int textAttr) {
         android.content.Context c = getActivity();
         if (c == null || btnTalk == null) return;
-        btnTalk.setBackground(Md3Ui.rounded(c, Md3Ui.color(c, bgAttr), 999f));
+        Md3Ui.setBg(btnTalk, Md3Ui.rounded(c, Md3Ui.color(c, bgAttr), 999f));
         btnTalk.setTextColor(Md3Ui.color(c, textAttr));
     }
 

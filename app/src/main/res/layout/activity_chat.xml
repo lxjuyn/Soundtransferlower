@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -17,7 +18,7 @@
             android:id="@+id/btnBack"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:src="@drawable/ic_md3_arrow_back"
+            app:srcCompat="@drawable/ic_md3_arrow_back"
             android:tag="md3-icon-on-surface"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="返回" />
@@ -36,7 +37,7 @@
             android:id="@+id/btnMenu"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:src="@drawable/ic_md3_more_vert"
+            app:srcCompat="@drawable/ic_md3_more_vert"
             android:tag="md3-icon-on-surface"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="菜单" />
@@ -65,7 +66,7 @@
             android:id="@+id/btnVoice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:src="@drawable/ic_voice"
+            app:srcCompat="@drawable/ic_voice"
             android:tag="md3-btn-tonal"
             android:padding="8dp" />
         <!-- 输入框 -->

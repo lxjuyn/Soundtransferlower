@@ -116,6 +116,11 @@ public class BluetoothService extends Service implements IBluetoothService {
     public void onCreate() {
         super.onCreate();
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+        if (bluetoothAdapter == null) {
+            // 无蓝牙硬件的设备（如部分模拟器/旧机型）：服务正常存活但不启动 RFCOMM，
+            // 避免后续 AcceptThread/ConnectThread 触碰空适配器 NPE，交由 UI 层提示
+            LogUtil.e(TAG, "蓝牙硬件不可用，服务进入空转");
+        }
         state = STATE_NONE;
         createNotificationChannelIfNeeded();
         initKeepAlive();
@@ -161,6 +166,12 @@ public class BluetoothService extends Service implements IBluetoothService {
     // ==================== 实现 IBluetoothService 接口 ====================
     @Override
     public synchronized void start() {
+        if (bluetoothAdapter == null) {
+            LogUtil.e(TAG, "start() 取消：蓝牙适配器为 null");
+            setState(STATE_NONE);
+            return;
+        }
+
         if (state == STATE_LISTEN && acceptThread != null) {
             return;
         }
@@ -620,7 +631,11 @@ public class BluetoothService extends Service implements IBluetoothService {
         public AcceptThread() {
             BluetoothServerSocket tmp = null;
             try {
-                tmp = bluetoothAdapter.listenUsingRfcommWithServiceRecord(APP_NAME, MY_UUID);
+                if (bluetoothAdapter == null) {
+                    failed = true;
+                } else {
+                    tmp = bluetoothAdapter.listenUsingRfcommWithServiceRecord(APP_NAME, MY_UUID);
+                }
                 LogUtil.d(TAG, "AcceptThread: server socket created");
             } catch (IOException e) {
                 LogUtil.e(TAG, "Socket listen() failed", e);

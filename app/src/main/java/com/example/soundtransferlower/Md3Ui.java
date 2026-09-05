@@ -37,6 +37,16 @@ public final class Md3Ui {
         return 0xFF000000;
     }
 
+    /** View.setBackground 自 API 16 起才有；A4（API 15）必须走旧 API 名 */
+    @SuppressWarnings("deprecation")
+    public static void setBg(android.view.View v, android.graphics.drawable.Drawable d) {
+        if (android.os.Build.VERSION.SDK_INT >= 16) {
+            v.setBackground(d);
+        } else {
+            v.setBackgroundDrawable(d);
+        }
+    }
+
     private static float dp(Context c, float v) {
         return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, c.getResources().getDisplayMetrics());
     }
@@ -51,12 +61,12 @@ public final class Md3Ui {
 
     /** MD3 分组卡：surface-container 填充，24dp 圆角 */
     public static void applyCard(View v) {
-        v.setBackground(rounded(v.getContext(), color(v.getContext(), R.attr.md3SurfaceContainer), 24f));
+        setBg(v, rounded(v.getContext(), color(v.getContext(), R.attr.md3SurfaceContainer), 24f));
     }
 
     /** 图标芯片容器：14dp 圆角，容器色由调用方指定（primary/secondary/tertiary container） */
     public static void applyChip(View v, int containerColorAttr) {
-        v.setBackground(rounded(v.getContext(), color(v.getContext(), containerColorAttr), 14f));
+        setBg(v, rounded(v.getContext(), color(v.getContext(), containerColorAttr), 14f));
     }
 
     /** Hero 头卡：start→end 渐变，28dp 圆角 */
@@ -65,7 +75,7 @@ public final class Md3Ui {
         GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 new int[]{color(c, R.attr.md3HeroStart), color(c, R.attr.md3HeroEnd)});
         g.setCornerRadius(dp(c, 28f));
-        v.setBackground(g);
+        setBg(v, g);
     }
 
     /** 连接状态圆点 */
@@ -73,7 +83,7 @@ public final class Md3Ui {
         GradientDrawable d = new GradientDrawable();
         d.setShape(GradientDrawable.OVAL);
         d.setColor(color(v.getContext(), on ? R.attr.md3DotOn : R.attr.md3DotOff));
-        v.setBackground(d);
+        setBg(v, d);
     }
 
     /** 顶栏返回键：圆形按压反馈 */
@@ -88,7 +98,7 @@ public final class Md3Ui {
         normal.setColor(0x00000000);
         s.addState(new int[]{android.R.attr.state_pressed}, pressed);
         s.addState(StateSet.WILD_CARD, normal);
-        v.setBackground(s);
+        setBg(v, s);
     }
 
     /** M3 规格 SwitchCompat：轨道 52x32dp（选中 primary/未选中 highest+outline 描边），滑块 24dp 圆 */
@@ -131,17 +141,17 @@ public final class Md3Ui {
         } else {
             d.setCornerRadii(new float[]{r, r, r, r, r, r, s, s});   // 左下收窄
         }
-        v.setBackground(d);
+        setBg(v, d);
     }
 
     /** 药丸形按钮/徽章背景（999dp 即全圆角） */
     public static void applyFilledPill(View v, int bgColorAttr) {
-        v.setBackground(rounded(v.getContext(), color(v.getContext(), bgColorAttr), 999f));
+        setBg(v, rounded(v.getContext(), color(v.getContext(), bgColorAttr), 999f));
     }
 
     /** 通用圆角背景 */
     public static void applyRounded(View v, int bgColorAttr, float radiusDp) {
-        v.setBackground(rounded(v.getContext(), color(v.getContext(), bgColorAttr), radiusDp));
+        setBg(v, rounded(v.getContext(), color(v.getContext(), bgColorAttr), radiusDp));
     }
 
     /** 图标着色：让矢量图标跟随主题色 */
@@ -192,7 +202,7 @@ public final class Md3Ui {
 
     /** 填充按钮：999dp 全圆角背景 + 文字颜色 */
     private static void applyBtn(View v, int bgAttr, int textAttr) {
-        v.setBackground(rounded(v.getContext(), color(v.getContext(), bgAttr), 999f));
+        setBg(v, rounded(v.getContext(), color(v.getContext(), bgAttr), 999f));
         if (v instanceof android.widget.TextView) {
             ((android.widget.TextView) v).setTextColor(color(v.getContext(), textAttr));
         }

@@ -59,7 +59,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-public class MainActivityNew extends FragmentActivity implements IMessageCallback.MessageCallback {
+public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity implements IMessageCallback.MessageCallback {
 
     private static final String TAG = "MainActivityNew";
     private static final long CALL_TIMEOUT_MS = 10000;
@@ -307,8 +307,9 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
     private void initBluetooth() {
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (bluetoothAdapter == null) {
-            Toast.makeText(this, "蓝牙不可用", Toast.LENGTH_SHORT).show();
-            finish();
+            // 无蓝牙硬件（部分模拟器/旧机型）：不退出，进入只读浏览模式，仅提示
+            Toast.makeText(this, "设备无蓝牙硬件，仅可浏览界面", Toast.LENGTH_LONG).show();
+            bluetoothFinder = null;
             return;
         }
         bluetoothFinder = new BluetoothFinder(this);
@@ -475,8 +476,13 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
 
     // ==================== Fragment 管理（安全版本） ====================
 
+    // isDestroyed() 是 API 17 才加入的方法——A4（API 15）上直接调用会 NoSuchMethodError
+    private boolean isDestroyedCompat() {
+        return android.os.Build.VERSION.SDK_INT >= 17 && isDestroyed();
+    }
+
     private void loadFragment(Fragment fragment) {
-        if (isFinishing() || isDestroyed()) return;
+        if (isFinishing() || isDestroyedCompat()) return;
         getSupportFragmentManager().beginTransaction()
                 .replace(R.id.fragment_container, fragment)
                 .addToBackStack(null)
@@ -485,7 +491,7 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
     }
 
     private void clearBackStack() {
-        if (isFinishing() || isDestroyed()) return;
+        if (isFinishing() || isDestroyedCompat()) return;
         FragmentManager fm = getSupportFragmentManager();
         if (fm.getBackStackEntryCount() > 0) {
             FragmentManager.BackStackEntry first = fm.getBackStackEntryAt(0);
@@ -495,7 +501,7 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
     }
 
     public void switchToFragment(String fragmentType, String deviceAddress, String deviceName) {
-        if (isFinishing() || isDestroyed()) {
+        if (isFinishing() || isDestroyedCompat()) {
             handler.post(() -> doSwitchToFragment(fragmentType, deviceAddress, deviceName));
             return;
         }
@@ -503,7 +509,7 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
     }
 
     private void doSwitchToFragment(String fragmentType, String deviceAddress, String deviceName) {
-        if (isFinishing() || isDestroyed()) return;
+        if (isFinishing() || isDestroyedCompat()) return;
         Fragment fragment = null;
         if ("TalkbackFragment".equals(fragmentType)) {
             fragment = new TalkbackFragment();
@@ -956,7 +962,8 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         }
 
         public void onDeviceFound(BluetoothDevice device) {
-            if (device == null || !bluetoothFinder.getPairedDevices().contains(device)) return;
+            if (device == null || bluetoothFinder == null
+                    || !bluetoothFinder.getPairedDevices().contains(device)) return;
             if (device.getAddress().equals(connectedDeviceAddress)) return;
             if (availableDevices.contains(device)) return;
 
@@ -968,6 +975,7 @@ public class MainActivityNew extends FragmentActivity implements IMessageCallbac
         }
 
         private void startDeviceScanning() {
+            if (bluetoothFinder == null) return; // 无蓝牙硬件的只读模式
             bluetoothFinder.fetchPairedDevices();
             IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
             try {
