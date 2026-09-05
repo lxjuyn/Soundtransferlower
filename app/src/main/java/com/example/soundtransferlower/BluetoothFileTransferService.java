@@ -360,17 +360,22 @@ public class BluetoothFileTransferService extends Service implements IFileTransf
                         return;
                     }
                     long fileLen = file.length();
-                    outputStream.write(intToBytes((int) fileLen));
+                    // 头部（4B 长度 + 2B 名长 + 文件名）合并为一次 write，减少系统调用
                     byte[] nameBytes = fileName.getBytes(StandardCharsets.UTF_8);
-                    outputStream.write(shortToBytes((short) nameBytes.length));
-                    outputStream.write(nameBytes);
+                    byte[] header = new byte[4 + 2 + nameBytes.length];
+                    System.arraycopy(intToBytes((int) fileLen), 0, header, 0, 4);
+                    System.arraycopy(shortToBytes((short) nameBytes.length), 0, header, 4, 2);
+                    System.arraycopy(nameBytes, 0, header, 6, nameBytes.length);
+                    outputStream.write(header);
 
-                    FileInputStream fis = new FileInputStream(file);
-                    byte[] buffer = new byte[8192];
+                    // 64KB 大块 + Buffered 输入：显著减少 syscall 次数（SPP 空口 ~100-200kB/s，
+                    // 大块写由 AOSP 内部按 MTU 分段，反而更平滑）
+                    java.io.BufferedInputStream bis = new java.io.BufferedInputStream(new FileInputStream(file), 65536);
+                    byte[] buffer = new byte[65536];
                     int bytesRead;
                     long totalSent = 0;
                     long lastCallbackTime = System.currentTimeMillis();
-                    while ((bytesRead = fis.read(buffer)) != -1) {
+                    while ((bytesRead = bis.read(buffer)) != -1) {
                         outputStream.write(buffer, 0, bytesRead);
                         totalSent += bytesRead;
                         long now = System.currentTimeMillis();
@@ -382,10 +387,12 @@ public class BluetoothFileTransferService extends Service implements IFileTransf
                             lastCallbackTime = now;
                         }
                     }
-                    fis.close();
+                    bis.close();
                     outputStream.flush();
                     progressHandler.post(() -> notifyProgress(fileLen, fileLen, 100));
-                    Thread.sleep(1500);
+                    // 旧实现硬睡 1.5s 等对端落盘；接收循环本就按 remaining 计数收满，
+                    // 200ms 给对端收尾即可，不再白等
+                    Thread.sleep(200);
                     notifyComplete(true, null);
                 } else if ("RECEIVE".equals(action)) {
                     byte[] lenBytes = new byte[4];
@@ -419,7 +426,7 @@ public class BluetoothFileTransferService extends Service implements IFileTransf
                         file = new File(dir, newName);
                         count++;
                     }
-                    FileOutputStream fos = new FileOutputStream(file);
+                    java.io.BufferedOutputStream bos = new java.io.BufferedOutputStream(new FileOutputStream(file), 65536);
                     byte[] buffer = new byte[8192];
                     int remaining = fileLen;
                     long totalReceived = 0;
@@ -430,7 +437,7 @@ public class BluetoothFileTransferService extends Service implements IFileTransf
                         if (bytes == -1) {
                             throw new IOException("连接意外断开");
                         }
-                        fos.write(buffer, 0, bytes);
+                        bos.write(buffer, 0, bytes);
                         totalReceived += bytes;
                         remaining -= bytes;
                         long now = System.currentTimeMillis();
@@ -442,7 +449,8 @@ public class BluetoothFileTransferService extends Service implements IFileTransf
                             lastCallbackTime = now;
                         }
                     }
-                    fos.close();
+                    bos.flush();
+                    bos.close();
                     progressHandler.post(() -> notifyProgress(fileLen, fileLen, 100));
                     notifyComplete(true, file.getAbsolutePath());
                 } else {

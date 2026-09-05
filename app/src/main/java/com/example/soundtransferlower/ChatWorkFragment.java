@@ -860,7 +860,8 @@ public class ChatWorkFragment extends Fragment implements
         lastProgressBytes = 0;
         lastProgressTime = 0;
         isWaitingForAccept = false;
-        if (serviceBound && bluetoothService != null) bluetoothService.stop();
+        // WP2：不再 stop 主通道——文件走独立 UUID 的第二条 RFCOMM，
+        // 接收方也从未停通道，双通道并行可让聊天/对讲在传文件期间继续可用
         isFileSender = true;
         if (filePath == null || !new File(filePath).exists()) {
             Toast.makeText(getActivity(), "文件不存在", Toast.LENGTH_SHORT).show();
@@ -1196,16 +1197,8 @@ public class ChatWorkFragment extends Fragment implements
 
     private void resumeBluetoothService() {
         if (serviceBound && bluetoothService != null) {
+            // WP2：主通道全程未停；仅当状态归零（被系统回收等）时原地重启
             if (bluetoothService.getState() == IBluetoothService.STATE_NONE) bluetoothService.start();
-            if (isFileSender) {
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-                    if (adapter != null) {
-                        BluetoothDevice device = adapter.getRemoteDevice(deviceAddress);
-                        bluetoothService.connect(device);
-                    }
-                }, 500);
-            }
         }
         isFileSender = false;
         localFilePath = null;

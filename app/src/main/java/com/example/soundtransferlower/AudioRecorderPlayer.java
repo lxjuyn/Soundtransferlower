@@ -183,6 +183,7 @@ public class AudioRecorderPlayer {
                 short[] pcmShorts = new short[FRAME_SAMPLES];
                 byte[] encodedBuffer = new byte[MAX_OPUS_BYTES];
 
+                byte[] pendingFrame = null;
                 while (isRecording) {
                     int totalRead = 0;
                     while (totalRead < PCM_BYTES_PER_FRAME) {
@@ -203,12 +204,24 @@ public class AudioRecorderPlayer {
                         );
 
                         if (encodedBytes > 0) {
-                            byte[] actualData = new byte[encodedBytes];
-                            System.arraycopy(encodedBuffer, 0, actualData, 0, encodedBytes);
-                            LogUtil.d(TAG, String.format("编码: PCM=%d 字节 -> Opus=%d 字节", totalRead, encodedBytes));
-                            audioDataSender.sendAudioData(actualData);
+                            // —— 2 帧合批发送：write 系统调用减半（每帧 20ms → 每 40ms 一次），
+                            //    对延迟影响 +20ms，对讲场景可接受；同时消灭每帧日志格式化开销 ——
+                            if (pendingFrame == null) {
+                                pendingFrame = new byte[encodedBytes];
+                                System.arraycopy(encodedBuffer, 0, pendingFrame, 0, encodedBytes);
+                            } else {
+                                byte[] batch = new byte[pendingFrame.length + encodedBytes];
+                                System.arraycopy(pendingFrame, 0, batch, 0, pendingFrame.length);
+                                System.arraycopy(encodedBuffer, 0, batch, pendingFrame.length, encodedBytes);
+                                pendingFrame = null;
+                                audioDataSender.sendAudioData(batch);
+                            }
                         }
                     }
+                }
+                if (pendingFrame != null && audioDataSender != null) {
+                    audioDataSender.sendAudioData(pendingFrame);
+                    pendingFrame = null;
                 }
             } catch (Exception e) {
                 LogUtil.e(TAG, "录制错误: " + e.getMessage());
