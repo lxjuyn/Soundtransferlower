@@ -23,6 +23,7 @@
             android:tag="md3-chip-primary">
 
             <ImageView
+                android:id="@+id/ivTalkStatusIcon"
                 android:layout_width="22dp"
                 android:layout_height="22dp"
                 android:layout_gravity="center"

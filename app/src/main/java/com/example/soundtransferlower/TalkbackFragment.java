@@ -49,6 +49,8 @@ public class TalkbackFragment extends Fragment
     private static final long INACTIVITY_THRESHOLD_DISCONNECT_DEFAULT = 50000;
     // 对讲无活动断开阈值（毫秒），从设置页读取（默认 50 秒）
     private long inactivityThresholdDisconnect = INACTIVITY_THRESHOLD_DISCONNECT_DEFAULT;
+    // 状态卡蓝牙图标连接脉冲动画（连接中循环，断开停止）
+    private android.animation.ValueAnimator statusPulseAnimator;
     private static final long REFRESH_INTERVAL = 5000;
     private static final long CONNECTION_RETRY_DELAY = 1000;
     // 重连退避：连续失败次数越多间隔越长（1s→2s→4s），达到上限后停止自动重连，
@@ -65,6 +67,7 @@ public class TalkbackFragment extends Fragment
     private TextView tvStatus;
     private ListView deviceList;
     private Button btnRefresh, btnAudioMode, btnTalk, btnDisconnect, btnPair;
+    private android.widget.ImageView ivTalkStatusIcon;
     private Button btnDial;
     private DeviceListAdapter deviceAdapter;
     private final List<BluetoothDevice> pairedDevices = new ArrayList<>();
@@ -190,6 +193,7 @@ public class TalkbackFragment extends Fragment
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.activity_main, container, false);
         initViews(view);
+        ivTalkStatusIcon = view.findViewById(R.id.ivTalkStatusIcon);
         setLoadingState();
         checkPermissions();
         initBluetooth();
@@ -596,6 +600,39 @@ public class TalkbackFragment extends Fragment
         Md3Ui.applyBtnState(btn, enabled);
     }
 
+    /** 状态卡蓝牙图标连接脉冲（1→1.18 往复，断开停止） */
+    private void startStatusPulse() {
+        if (ivTalkStatusIcon == null || statusPulseAnimator != null) return;
+        mainHandler.post(() -> {
+            if (ivTalkStatusIcon == null || !isAdded()) return;
+            statusPulseAnimator = android.animation.ValueAnimator.ofFloat(1f, 1.18f);
+            statusPulseAnimator.setDuration(700);
+            statusPulseAnimator.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+            statusPulseAnimator.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+            statusPulseAnimator.addUpdateListener(a -> {
+                float v = (Float) a.getAnimatedValue();
+                ivTalkStatusIcon.setScaleX(v);
+                ivTalkStatusIcon.setScaleY(v);
+            });
+            statusPulseAnimator.start();
+        });
+    }
+
+    private void stopStatusPulse() {
+        if (statusPulseAnimator != null) {
+            statusPulseAnimator.cancel();
+            statusPulseAnimator = null;
+        }
+        if (ivTalkStatusIcon != null) {
+            mainHandler.post(() -> {
+                if (ivTalkStatusIcon != null) {
+                    ivTalkStatusIcon.setScaleX(1f);
+                    ivTalkStatusIcon.setScaleY(1f);
+                }
+            });
+        }
+    }
+
     /** 按主题配色设置 PTT 按钮状态（圆角药丸 + 前景文字） */
     private void setTalkButtonState(int bgAttr, int textAttr) {
         android.content.Context c = getActivity();
@@ -758,6 +795,7 @@ public class TalkbackFragment extends Fragment
                     playConnectionSound();
                     setState(STATE_IDLE);
                     startInactivityTimer();
+                    startStatusPulse();
                     connectedDeviceAddress = bluetoothService != null ?
                             bluetoothService.getConnectedDeviceAddress() : null;
                     connectedDeviceName = deviceName;
@@ -767,18 +805,24 @@ public class TalkbackFragment extends Fragment
                     tvStatus.setText("连接中...");
                     isConnecting = true;
                     btnDisconnect.setEnabled(true);
+                    Md3Ui.applyBtnState(btnDisconnect, true);
+                    startStatusPulse();
                     break;
                 case IBluetoothService.STATE_LISTEN:
                     tvStatus.setText("等待连接...");
                     isConnectionActive = false;
                     isConnecting = false;
                     btnDisconnect.setEnabled(true);
+                    Md3Ui.applyBtnState(btnDisconnect, true);
+                    stopStatusPulse();
                     break;
                 case IBluetoothService.STATE_NONE:
                     tvStatus.setText("未连接");
                     isConnectionActive = false;
                     isConnecting = false;
                     btnDisconnect.setEnabled(true);
+                    Md3Ui.applyBtnState(btnDisconnect, true);
+                    stopStatusPulse();
                     break;
             }
         });

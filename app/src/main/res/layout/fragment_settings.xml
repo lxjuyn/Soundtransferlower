@@ -64,7 +64,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/app_name"
-                    android:textColor="#FFFFFF"
+                    android:textColor="@color/md3_hero_text"
                     android:textSize="24sp"
                     android:textStyle="bold" />
 
@@ -78,7 +78,7 @@
                     android:paddingTop="5dp"
                     android:paddingBottom="5dp"
                     android:text="@string/settings_unknown"
-                    android:textColor="#E7EAFF"
+                    android:textColor="@color/md3_hero_text"
                     android:textSize="12sp" />
             </LinearLayout>
 
@@ -87,7 +87,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:text="@string/settings_tagline"
-                android:textColor="#CCFFFFFF"
+                android:textColor="@color/md3_hero_text_secondary"
                 android:textSize="13sp" />
 
             <LinearLayout
@@ -108,7 +108,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginLeft="8dp"
                     android:text="@string/settings_status_disconnected"
-                    android:textColor="#E8FFFFFF"
+                    android:textColor="@color/md3_hero_text"
                     android:textSize="13sp" />
             </LinearLayout>
         </LinearLayout>

@@ -57,6 +57,9 @@
     <color name="md3_hero_end">#2E3C8E</color>
     <color name="md3_dot_on">#7FDCA4</color>
     <color name="md3_dot_off">#66FFFFFF</color>
+    <!-- Hero 渐变恒为深色，文字恒白系（token 化，避免布局硬编码） -->
+    <color name="md3_hero_text">#FFFFFF</color>
+    <color name="md3_hero_text_secondary">#CCFFFFFF</color>
 
     <!-- ============ 调色板 2：绿白 GreenWhite（亮色，原绿色板复用） ============ -->
     <color name="md3g_primary">#1A6B52</color>
