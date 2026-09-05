@@ -20,7 +20,7 @@
             android:id="@+id/btnBack"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:src="@drawable/ic_md3_arrow_back"
+            app:srcCompat="@drawable/ic_md3_arrow_back"
             android:tag="md3-icon-on-surface"
             android:background="@drawable/bg_md3_back_btn"
             android:contentDescription="@string/back_button_desc"
@@ -43,7 +43,7 @@
             android:id="@+id/btnMenu"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:src="@drawable/ic_md3_more_vert"
+            app:srcCompat="@drawable/ic_md3_more_vert"
             android:tag="md3-icon-on-surface"
             android:background="@drawable/bg_md3_back_btn"
             android:contentDescription="@string/menu_button_desc"
@@ -103,7 +103,7 @@
                     android:id="@+id/navIconTalkback"
                     android:layout_width="22dp"
                     android:layout_height="22dp"
-                    android:src="@drawable/ic_md3_mic"
+                    app:srcCompat="@drawable/ic_md3_mic"
                     app:srcCompat="@drawable/ic_md3_mic" />
 
                 <TextView
@@ -132,7 +132,7 @@
                     android:id="@+id/navIconChat"
                     android:layout_width="22dp"
                     android:layout_height="22dp"
-                    android:src="@drawable/ic_md3_chat"
+                    app:srcCompat="@drawable/ic_md3_chat"
                     app:srcCompat="@drawable/ic_md3_chat" />
 
                 <TextView
@@ -161,7 +161,7 @@
                     android:id="@+id/navIconMine"
                     android:layout_width="22dp"
                     android:layout_height="22dp"
-                    android:src="@drawable/ic_md3_person"
+                    app:srcCompat="@drawable/ic_md3_person"
                     app:srcCompat="@drawable/ic_md3_person" />
 
                 <TextView
