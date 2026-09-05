@@ -124,8 +124,18 @@ public class BluetoothService extends Service implements IBluetoothService {
         state = STATE_NONE;
         createNotificationChannelIfNeeded();
         initKeepAlive();
-        // targetSdk 34：前台服务必须指定 connectedDevice 类型
+        // targetSdk 34：前台服务必须指定 connectedDevice 类型，
+        // 且 startForeground 时刻必须已持有 BLUETOOTH_CONNECT/SCAN 运行时权限，
+        // 否则 SecurityException（开机自启/服务被系统拉起/用户撤权三条路径都会踩中）。
         if (android.os.Build.VERSION.SDK_INT >= 34) {
+            boolean btPermGranted =
+                    PermissionHelper.hasPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT)
+                            || PermissionHelper.hasPermission(this, android.Manifest.permission.BLUETOOTH_SCAN);
+            if (!btPermGranted) {
+                LogUtil.w(TAG, "蓝牙运行时权限未授予，前台服务降级退出，等待 UI 授权后重启");
+                stopSelf();
+                return;
+            }
             startForeground(NOTIFICATION_ID, createForegroundNotification(),
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
         } else {
@@ -443,7 +453,8 @@ public class BluetoothService extends Service implements IBluetoothService {
         intent.putExtra("IS_CALL", true);
 
         PendingIntent pendingIntent = PendingIntent.getActivity(
-                this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+                this, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         Notification notification;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -577,11 +588,11 @@ public class BluetoothService extends Service implements IBluetoothService {
         connectedThread.start();
 
         connectedDeviceAddress = device.getAddress();
-        connectedDeviceName = device.getName();
+        connectedDeviceName = PermissionHelper.safeName(this, device);
         isInitiator = false;
         targetDeviceAddress = null;
 
-        notifyConnectionStatusChanged(STATE_CONNECTED, device.getName());
+        notifyConnectionStatusChanged(STATE_CONNECTED, PermissionHelper.safeName(this, device));
         setState(STATE_CONNECTED);
     }
 
@@ -637,7 +648,7 @@ public class BluetoothService extends Service implements IBluetoothService {
                     tmp = bluetoothAdapter.listenUsingRfcommWithServiceRecord(APP_NAME, MY_UUID);
                 }
                 LogUtil.d(TAG, "AcceptThread: server socket created");
-            } catch (IOException e) {
+            } catch (Exception e) {
                 LogUtil.e(TAG, "Socket listen() failed", e);
                 failed = true;
             }
@@ -701,7 +712,7 @@ public class BluetoothService extends Service implements IBluetoothService {
             BluetoothSocket tmp = null;
             try {
                 tmp = device.createRfcommSocketToServiceRecord(MY_UUID);
-            } catch (IOException e) {
+            } catch (Exception e) {
                 LogUtil.e(TAG, "Socket create() failed", e);
             }
             socket = tmp;
@@ -709,10 +720,11 @@ public class BluetoothService extends Service implements IBluetoothService {
 
         public void run() {
             setName("ConnectThread");
-            bluetoothAdapter.cancelDiscovery();
             try {
-                socket.connect();
-            } catch (IOException e) {
+                if (bluetoothAdapter != null) bluetoothAdapter.cancelDiscovery();
+                if (socket != null) socket.connect();
+                else throw new java.io.IOException("socket 为 null（create 阶段失败）");
+            } catch (Exception e) {
                 connectionFailed();
                 try {
                     socket.close();

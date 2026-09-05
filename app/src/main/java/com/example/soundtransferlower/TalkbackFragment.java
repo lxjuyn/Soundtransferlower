@@ -140,10 +140,11 @@ public class TalkbackFragment extends Fragment
             BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
 
             if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
-                LogUtil.d(TAG, "设备已连接: " + device.getName());
-                mainHandler.post(() -> tvStatus.setText("已连接: " + device.getName()));
+                String n = PermissionHelper.safeName(getActivity(), device);
+                LogUtil.d(TAG, "设备已连接: " + n);
+                mainHandler.post(() -> tvStatus.setText("已连接: " + (n != null ? n : device.getAddress())));
             } else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
-                LogUtil.d(TAG, "设备已断开: " + device.getName());
+                LogUtil.d(TAG, "设备已断开: " + PermissionHelper.safeName(getActivity(), device));
                 handleConnectionLost();
             } else if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)) {
                 int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
@@ -365,6 +366,7 @@ public class TalkbackFragment extends Fragment
     @SuppressLint("MissingPermission")
     private void refreshPairedDevices() {
         if (bluetoothAdapter == null) return;
+        if (!PermissionHelper.canUseBluetooth(getActivity())) return;
         Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
         pairedDevices.clear();
         pairedDevices.addAll(devices);
@@ -847,7 +849,7 @@ public class TalkbackFragment extends Fragment
                 TextView avatar = convertView.findViewById(R.id.avatar);
 
                 if (deviceName != null) {
-                    String name = device.getName();
+                    String name = PermissionHelper.safeName(context, device);
                     deviceName.setText(name != null && !name.isEmpty() ? name : "未知设备");
                     // 标蓝
                     int color = (scannedAddresses != null && scannedAddresses.contains(device.getAddress())) ?

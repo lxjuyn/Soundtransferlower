@@ -32,7 +32,7 @@ public class AutoDeviceScanner {
             if (BluetoothDevice.ACTION_FOUND.equals(action)) {
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                 if (device != null) {
-                    LogUtil.d(TAG, "扫描到设备: " + device.getName() + " (" + device.getAddress() + ")");
+                    LogUtil.d(TAG, "扫描到设备: " + PermissionHelper.safeName(context, device) + " (" + device.getAddress() + ")");
                     notifyDeviceFound(device);
                 }
             } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
@@ -83,6 +83,7 @@ public class AutoDeviceScanner {
     private void stopScanning() {
         handler.removeCallbacks(scanRunnable);
         if (isScanning) {
+            if (!PermissionHelper.canUseBluetooth(context)) return;
             bluetoothAdapter.cancelDiscovery();
             isScanning = false;
         }
@@ -104,12 +105,13 @@ public class AutoDeviceScanner {
 
         LogUtil.d(TAG, "开始扫描附近设备...");
         isScanning = true;
+        if (!PermissionHelper.canUseBluetooth(context)) return;
         bluetoothAdapter.startDiscovery();
         // 超时处理：12秒后强制结束
         handler.postDelayed(() -> {
             if (isScanning) {
                 LogUtil.d(TAG, "扫描超时，强制取消");
-                bluetoothAdapter.cancelDiscovery();
+                if (bluetoothAdapter != null && PermissionHelper.canUseBluetooth(context)) bluetoothAdapter.cancelDiscovery();
                 isScanning = false;
                 scheduleNextScan();
             }

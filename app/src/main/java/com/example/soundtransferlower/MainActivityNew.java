@@ -313,7 +313,13 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
             return;
         }
         bluetoothFinder = new BluetoothFinder(this);
-        refreshPairedDevices();
+        boolean btGranted = PermissionHelper.hasPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT)
+                || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S;
+        if (btGranted) {
+            refreshPairedDevices();
+        } else {
+            LogUtil.w("MainActivityNew", "蓝牙权限未授予，已配对列表待授权后刷新");
+        }
     }
 
     private void bindService() {
@@ -373,9 +379,33 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
                     android.Manifest.permission.ACCESS_FINE_LOCATION
             };
         }
+        // API 33+：通知权限（召唤/来电/前台通知都依赖），并入同一次请求
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            java.util.List<String> tmp = new java.util.ArrayList<>(java.util.Arrays.asList(permissions));
+            tmp.add(android.Manifest.permission.POST_NOTIFICATIONS);
+            permissions = tmp.toArray(new String[0]);
+        }
         java.util.List<String> denied = PermissionHelper.getDeniedPermissions(this, permissions);
         if (!denied.isEmpty()) {
             PermissionHelper.requestPermissions(this, denied.toArray(new String[0]), REQUEST_PERMISSIONS);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_PERMISSIONS) {
+            boolean btGranted = PermissionHelper.hasPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT)
+                    || PermissionHelper.hasPermission(this, android.Manifest.permission.BLUETOOTH_SCAN)
+                    || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S;
+            if (btGranted) {
+                // 授权完成后才允许触碰 getBondedDevices/getName 等受限蓝牙 API
+                refreshPairedDevices();
+                if (bluetoothService == null || bluetoothService.getState() != IBluetoothService.STATE_CONNECTED) {
+                    // 授权后重启服务（开机自启/撤权场景下服务此前可能已降级退出）
+                    startService(new Intent(this, BluetoothService.class));
+                }
+            }
         }
     }
 
@@ -554,10 +584,20 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
     @SuppressLint("MissingPermission")
     public void refreshPairedDevices() {
         if (bluetoothAdapter == null) return;
-        Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
-        pairedDevices.clear();
-        pairedDevices.addAll(devices);
-        LogUtil.d(TAG, "刷新设备列表，数量: " + pairedDevices.size());
+        // Android 12+：未授予 BLUETOOTH_CONNECT 时 getBondedDevices 直接 SecurityException
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+                && !PermissionHelper.hasPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT)) {
+            LogUtil.w(TAG, "未授予 BLUETOOTH_CONNECT，跳过已配对设备刷新");
+            return;
+        }
+        try {
+            Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
+            pairedDevices.clear();
+            pairedDevices.addAll(devices);
+            LogUtil.d(TAG, "刷新设备列表，数量: " + pairedDevices.size());
+        } catch (SecurityException e) {
+            LogUtil.e(TAG, "getBondedDevices 权限被拒", e);
+        }
     }
 
     public List<BluetoothDevice> getPairedDevices() {
@@ -570,7 +610,7 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
             ChatWorkFragment f = new ChatWorkFragment();
             Bundle args = new Bundle();
             args.putString("DEVICE_ADDRESS", device.getAddress());
-            args.putString("DEVICE_NAME", device.getName());
+            args.putString("DEVICE_NAME", PermissionHelper.safeName(this, device));
             f.setArguments(args);
             clearBackStack();
             loadFragment(f);
@@ -592,10 +632,11 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
         bluetoothService.setConnectionRole(isInitiator, remoteAddress);
 
         Toast.makeText(this,
-                isInitiator ? "正在连接 " + device.getName() : "等待 " + device.getName() + " 连接",
+                isInitiator ? "正在连接 " + PermissionHelper.safeName(this, device)
+                        : "等待 " + PermissionHelper.safeName(this, device) + " 连接",
                 Toast.LENGTH_SHORT).show();
 
-        connectedDeviceName = device.getName();
+        connectedDeviceName = PermissionHelper.safeName(this, device);
         connectedDeviceAddress = device.getAddress();
         currentConnectionState = IBluetoothService.STATE_CONNECTING;
         updateStatusDisplay();
@@ -862,7 +903,8 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
 
         PendingIntent pendingIntent = PendingIntent.getActivity(
-                this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+                this, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         Notification notification;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -968,7 +1010,7 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
             if (availableDevices.contains(device)) return;
 
             availableDevices.add(device);
-            String name = device.getName();
+            String name = PermissionHelper.safeName(MainActivityNew.this, device);
             if (name == null || name.isEmpty()) name = "未知设备 (" + device.getAddress() + ")";
             deviceNames.add(name);
             if (adapter != null) runOnUiThread(() -> adapter.notifyDataSetChanged());
@@ -1361,7 +1403,7 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
         final List<BluetoothDevice> deviceList = new ArrayList<>(bonded);
         final List<String> deviceNames = new ArrayList<>();
         for (BluetoothDevice d : deviceList) {
-            String name = d.getName();
+            String name = PermissionHelper.safeName(this, d);
             if (name == null || name.isEmpty()) name = "未知设备";
             deviceNames.add(name);
         }
@@ -1384,7 +1426,7 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
     private void confirmAndCall(BluetoothDevice device) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("确认呼叫");
-        builder.setMessage("呼叫 " + device.getName() + " ?");
+        builder.setMessage("呼叫 " + PermissionHelper.safeName(this, device) + " ?");
         builder.setPositiveButton("呼叫", (dialog, which) -> {
             if (bluetoothService == null || bluetoothService.getState() != IBluetoothService.STATE_CONNECTED) {
                 Toast.makeText(this, "未连接，无法呼叫", Toast.LENGTH_SHORT).show();
@@ -1396,21 +1438,21 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
                 bluetoothService.setConnectionRole(true, device.getAddress());
                 handler.postDelayed(() -> {
                     if (bluetoothService.getState() == IBluetoothService.STATE_CONNECTED) {
-                        String myName = bluetoothAdapter.getName();
+                        String myName = PermissionHelper.safeName(this, bluetoothAdapter);
                         if (myName == null) myName = "我";
                         bluetoothService.write((IBluetoothService.TEXT_PREFIX +
                                 IBluetoothService.CALL_REQUEST + myName).getBytes());
-                        Toast.makeText(MainActivityNew.this, "正在呼叫 " + device.getName(), Toast.LENGTH_LONG).show();
+                        Toast.makeText(MainActivityNew.this, "正在呼叫 " + PermissionHelper.safeName(this, device), Toast.LENGTH_LONG).show();
                     } else {
                         Toast.makeText(MainActivityNew.this, "连接失败", Toast.LENGTH_SHORT).show();
                     }
                 }, RECONNECT_DELAY_MS);
             } else {
-                String myName = bluetoothAdapter.getName();
+                String myName = PermissionHelper.safeName(this, bluetoothAdapter);
                 if (myName == null) myName = "我";
                 bluetoothService.write((IBluetoothService.TEXT_PREFIX +
                         IBluetoothService.CALL_REQUEST + myName).getBytes());
-                Toast.makeText(this, "正在呼叫 " + device.getName(), Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "正在呼叫 " + PermissionHelper.safeName(this, device), Toast.LENGTH_LONG).show();
             }
         });
         builder.setNegativeButton("取消", null);
@@ -1532,7 +1574,7 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
         builder.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, deviceNames),
                 (dialog, which) -> {
                     BluetoothDevice device = deviceList.get(which);
-                    switchToFragment("ChatWorkFragment", device.getAddress(), device.getName());
+                    switchToFragment("ChatWorkFragment", device.getAddress(), PermissionHelper.safeName(this, device));
                 });
         builder.setNegativeButton("取消", (dialog, which) -> {
             clearPendingShare();
@@ -1568,7 +1610,8 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
                 mainActivity.refreshPairedDevices();
                 listView.setOnItemClickListener((parent, v, position, id) -> {
                     BluetoothDevice device = mainActivity.getPairedDevices().get(position);
-                    if (device.getBondState() == BluetoothDevice.BOND_BONDED) {
+                    if (PermissionHelper.canUseBluetooth(mainActivity)
+                            && device.getBondState() == BluetoothDevice.BOND_BONDED) {
                         mainActivity.connectToDeviceForChat(device);
                     } else {
                         pairDevice(device);
@@ -1619,7 +1662,7 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
             try {
                 Method method = device.getClass().getMethod("createBond");
                 method.invoke(device);
-                Toast.makeText(getActivity(), "正在配对: " + device.getName(), Toast.LENGTH_SHORT).show();
+                Toast.makeText(getActivity(), "正在配对: " + PermissionHelper.safeName(getActivity(), device), Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
                 LogUtil.e(TAG, "配对失败", e);
                 Toast.makeText(getActivity(), "配对失败", Toast.LENGTH_SHORT).show();
@@ -1703,7 +1746,7 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
             builder.setTitle("修改蓝牙名称");
             MainActivityNew main = (MainActivityNew) getActivity();
             String currentName = (main != null && main.bluetoothAdapter != null) ?
-                    main.bluetoothAdapter.getName() : "";
+                    PermissionHelper.safeName(main, main.bluetoothAdapter) : "";
 
             LinearLayout layout = new LinearLayout(getActivity());
             layout.setOrientation(LinearLayout.VERTICAL);
@@ -1728,7 +1771,7 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
             builder.setPositiveButton("确认", (dialog, which) -> {
                 String newName = input.getText().toString();
                 if (!newName.isEmpty() && main != null && main.bluetoothAdapter != null) {
-                    main.bluetoothAdapter.setName(newName);
+                    if (PermissionHelper.canUseBluetooth(main)) main.bluetoothAdapter.setName(newName);
                     Toast.makeText(getActivity(), "蓝牙名称已修改", Toast.LENGTH_SHORT).show();
                 }
             });

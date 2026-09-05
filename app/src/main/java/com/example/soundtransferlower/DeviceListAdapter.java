@@ -37,7 +37,7 @@ public class DeviceListAdapter extends ArrayAdapter<BluetoothDevice> {
             TextView deviceName = convertView.findViewById(R.id.deviceName);
             TextView deviceAddress = convertView.findViewById(R.id.deviceAddress);
             TextView avatar = convertView.findViewById(R.id.avatar);
-            String name = device.getName();
+            String name = PermissionHelper.safeName(parent.getContext(), device);
             if (name == null || name.isEmpty()) {
                 name = "未知设备";
             }
@@ -45,8 +45,9 @@ public class DeviceListAdapter extends ArrayAdapter<BluetoothDevice> {
             deviceAddress.setText(device.getAddress());
             int onSurface = Md3Ui.color(parent.getContext(), R.attr.md3OnSurface);
             int variant = Md3Ui.color(parent.getContext(), R.attr.md3OnSurfaceVariant);
-            deviceName.setTextColor(device.getBondState() == BluetoothDevice.BOND_BONDED ?
-                    onSurface : variant);
+            boolean bonded = PermissionHelper.canUseBluetooth(parent.getContext())
+                    && device.getBondState() == BluetoothDevice.BOND_BONDED;
+            deviceName.setTextColor(bonded ? onSurface : variant);
             deviceAddress.setTextColor(variant);
             if (avatar != null) avatar.setText("蓝牙");
         }

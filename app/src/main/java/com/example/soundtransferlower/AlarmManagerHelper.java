@@ -29,6 +29,7 @@ public class AlarmManagerHelper {
         this.interval = interval;
         alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         Intent intent = new Intent(ACTION_RESTART_SERVICE);
+        intent.setPackage(context.getPackageName());
         pendingIntent = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 

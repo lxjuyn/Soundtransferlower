@@ -240,7 +240,7 @@ public class BluetoothFileTransferService extends Service implements IFileTransf
                 } else {
                     tmp = bluetoothAdapter.listenUsingRfcommWithServiceRecord(APP_NAME, MY_UUID);
                 }
-            } catch (IOException e) {
+            } catch (Exception e) {
                 LogUtil.e(TAG, "listen failed", e);
                 failed = true;
             }
@@ -295,7 +295,7 @@ public class BluetoothFileTransferService extends Service implements IFileTransf
             BluetoothSocket tmp = null;
             try {
                 tmp = device.createRfcommSocketToServiceRecord(MY_UUID);
-            } catch (IOException e) {
+            } catch (Exception e) {
                 LogUtil.e(TAG, "create socket failed", e);
             }
             socket = tmp;
@@ -303,15 +303,17 @@ public class BluetoothFileTransferService extends Service implements IFileTransf
 
         public void run() {
             setName("FileConnectThread");
-            bluetoothAdapter.cancelDiscovery();
             try {
-                socket.connect();
+                if (bluetoothAdapter != null) bluetoothAdapter.cancelDiscovery();
+                if (socket != null) socket.connect();
+                else throw new java.io.IOException("socket 为 null（create 阶段失败）");
+
                 connected(socket, device);
-            } catch (IOException e) {
+            } catch (Exception e) {
                 LogUtil.e(TAG, "connect failed", e);
                 try {
-                    socket.close();
-                } catch (IOException e2) {
+                    if (socket != null) socket.close();
+                } catch (Exception e2) {
                     LogUtil.e(TAG, "close socket after fail", e2);
                 }
                 notifyComplete(false, null);

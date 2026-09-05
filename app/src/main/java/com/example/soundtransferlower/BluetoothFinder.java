@@ -31,7 +31,7 @@ public class BluetoothFinder {
                 if (device != null && !scannedDevices.contains(device)) {
                     scannedDevices.add(device);
                     checkForDuplicates(device);
-                    Log.d(TAG, "发现设备: " + device.getName() + " (" + device.getAddress() + ")");
+                    Log.d(TAG, "发现设备: " + PermissionHelper.safeName(context, device) + " (" + device.getAddress() + ")");
                 }
             }
         }
@@ -70,6 +70,7 @@ public class BluetoothFinder {
         }
 
         if (bluetoothAdapter != null) {
+            if (!PermissionHelper.canUseBluetooth(context)) return;
             bluetoothAdapter.startDiscovery();
             Log.d(TAG, "蓝牙扫描已启动");
         }

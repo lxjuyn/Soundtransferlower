@@ -463,7 +463,7 @@ public class ChatWorkFragment extends Fragment implements
             return;
         }
         BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-        String callerName = (adapter != null) ? adapter.getName() : "我";
+        String callerName = (adapter != null) ? PermissionHelper.safeName(getActivity(), adapter) : "我";
         if (TextUtils.isEmpty(callerName)) callerName = "我";
         String callMsg = IBluetoothService.TEXT_PREFIX + IBluetoothService.CALL_PREFIX + callerName;
         bluetoothService.write(callMsg.getBytes());
@@ -623,6 +623,25 @@ public class ChatWorkFragment extends Fragment implements
             return;
         }
         try {
+            // API 29+ 分区存储：直接写公共目录会 EACCES，改走 MediaStore
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                String mime = (message.getType() == Message.TYPE_IMAGE) ? "image/*" : null;
+                String name = message.getFileName() != null ? message.getFileName()
+                        : ("file_" + System.currentTimeMillis());
+                java.io.InputStream in = new java.io.FileInputStream(srcFile);
+                android.net.Uri saved = FileHelper.saveToDownloadsViaMediaStore(getActivity(), name, in, mime);
+                if (saved == null && message.getType() == Message.TYPE_IMAGE) {
+                    in = new java.io.FileInputStream(srcFile);
+                    saved = FileHelper.saveToDCIMViaMediaStore(getActivity(), name, in, mime);
+                }
+                if (in != null) { try { in.close(); } catch (Exception ignore) {} }
+                if (saved != null) {
+                    Toast.makeText(getActivity(), "已保存到系统下载/相册", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(getActivity(), "保存失败：系统未收录该文件", Toast.LENGTH_SHORT).show();
+                }
+                return;
+            }
             File destDir = (message.getType() == Message.TYPE_IMAGE) ?
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM) :
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
@@ -1579,7 +1598,13 @@ public class ChatWorkFragment extends Fragment implements
             return;
         }
         try {
-            File exportDir = new File(Environment.getExternalStorageDirectory(), "SoundTransferExports");
+            File exportDir;
+            boolean scoped = android.os.Build.VERSION.SDK_INT >= 29;
+            if (scoped) {
+                exportDir = new File(getActivity().getCacheDir(), "exports");
+            } else {
+                exportDir = new File(Environment.getExternalStorageDirectory(), "SoundTransferExports");
+            }
             if (!exportDir.exists() && !exportDir.mkdirs()) {
                 Toast.makeText(getActivity(), "创建导出目录失败", Toast.LENGTH_SHORT).show();
                 return;
@@ -1612,8 +1637,19 @@ public class ChatWorkFragment extends Fragment implements
             }
             osw.close();
             fos.close();
-            Toast.makeText(getActivity(), "聊天记录已导出到: " + exportFile.getAbsolutePath(),
-                    Toast.LENGTH_LONG).show();
+            if (scoped) {
+                java.io.InputStream in = new java.io.FileInputStream(exportFile);
+                android.net.Uri saved = FileHelper.saveToDownloadsViaMediaStore(getActivity(), filename, in, "text/plain");
+                try { in.close(); } catch (Exception ignore) {}
+                if (saved != null) {
+                    Toast.makeText(getActivity(), "聊天记录已导出到系统下载目录", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(getActivity(), "导出失败：系统未收录该文件", Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                Toast.makeText(getActivity(), "聊天记录已导出到: " + exportFile.getAbsolutePath(),
+                        Toast.LENGTH_LONG).show();
+            }
         } catch (IOException e) {
             LogUtil.e(TAG, "导出聊天记录失败", e);
             Toast.makeText(getActivity(), "导出失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();

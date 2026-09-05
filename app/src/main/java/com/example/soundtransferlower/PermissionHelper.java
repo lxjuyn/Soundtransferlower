@@ -105,4 +105,56 @@ public class PermissionHelper {
         }
         return !ActivityCompat.shouldShowRequestPermissionRationale(activity, permission);
     }
+
+    /** Android 12+ 需要 BLUETOOTH_CONNECT 才能调用名称/配对类 API */
+    public static boolean canUseBluetooth(android.content.Context context) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            return hasPermission(context, android.Manifest.permission.BLUETOOTH_CONNECT);
+        }
+        return true;
+    }
+
+    /** 安全获取设备名：无权限/异常时返回 null，不抛 SecurityException */
+    @SuppressWarnings("MissingPermission")
+    public static String safeName(android.content.Context context, android.bluetooth.BluetoothDevice device) {
+        if (device == null || !canUseBluetooth(context)) return null;
+        try {
+            return device.getName();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 安全读取已配对设备集合：无权限时返回空集合 */
+    @SuppressWarnings("MissingPermission")
+    public static java.util.Set<android.bluetooth.BluetoothDevice> safeBondedDevices(android.content.Context context,
+                                                                                     android.bluetooth.BluetoothAdapter adapter) {
+        java.util.Set<android.bluetooth.BluetoothDevice> empty = new java.util.HashSet<>();
+        if (adapter == null || !canUseBluetooth(context)) return empty;
+        try {
+            return adapter.getBondedDevices();
+        } catch (Throwable t) {
+            return empty;
+        }
+    }
+    /** 安全读取本机蓝牙名称（BluetoothAdapter.getName 同样需要 CONNECT） */
+    @SuppressWarnings("MissingPermission")
+    public static String safeName(android.content.Context context, android.bluetooth.BluetoothAdapter adapter) {
+        if (adapter == null || !canUseBluetooth(context)) return null;
+        try {
+            return adapter.getName();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 安全读取绑定状态：无权限时一律视为未绑定 */
+    public static boolean safeBonded(android.content.Context context, android.bluetooth.BluetoothDevice device) {
+        if (device == null || !canUseBluetooth(context)) return false;
+        try {
+            return device.getBondState() == android.bluetooth.BluetoothDevice.BOND_BONDED;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
 }

@@ -103,7 +103,7 @@ public class SettingsFragment extends Fragment {
     private void setupDeviceName(View view) {
         BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
         if (adapter != null) {
-            String name = adapter.getName();
+            String name = PermissionHelper.safeName(getContext(), adapter);
             tvDeviceName.setText(name != null ? name : getString(R.string.settings_unknown));
         }
 
@@ -123,7 +123,7 @@ public class SettingsFragment extends Fragment {
         AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
         builder.setTitle(R.string.settings_rename_dialog_title);
         BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-        String currentName = adapter != null ? adapter.getName() : "";
+        String currentName = adapter != null ? PermissionHelper.safeName(getActivity(), adapter) : "";
         final EditText input = new EditText(getActivity());
         input.setText(currentName);
         input.setHint(currentName);

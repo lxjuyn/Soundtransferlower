@@ -27,10 +27,16 @@ public class ServiceRestartWorker extends Worker {
         Log.d(TAG, "WorkManager 保活触发，检查服务状态...");
         Context context = getApplicationContext();
         Intent serviceIntent = new Intent(context, BluetoothService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent);
-        } else {
-            context.startService(serviceIntent);
+        try {
+            // API 31+ 后台 Worker 启动 FGS 会被系统直接拦下（ForegroundServiceStartNotAllowedException），
+            // 保活主路径是精确闹钟（闹钟接收器有临时豁免）；这里只做尽力而为的兜底
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent);
+            } else {
+                context.startService(serviceIntent);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "后台重启服务被系统限制，忽略（依赖闹钟保活路径）: " + t.getMessage());
         }
         return Result.success();
     }
