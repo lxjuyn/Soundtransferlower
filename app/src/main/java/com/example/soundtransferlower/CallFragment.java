@@ -35,6 +35,20 @@ public class CallFragment extends Fragment {
                 if (tvCallerAvatar != null && !name.isEmpty()) {
                     tvCallerAvatar.setText(String.valueOf(name.charAt(0)).toUpperCase(Locale.getDefault()));
                 }
+                // 呼吸环：等待回调时头像轻微脉动
+                if (tvCallerAvatar != null) {
+                    android.animation.ValueAnimator pulse = android.animation.ValueAnimator.ofFloat(1f, 1.06f);
+                    pulse.setDuration(800);
+                    pulse.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+                    pulse.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+                    pulse.addUpdateListener(a -> {
+                        float v = (Float) a.getAnimatedValue();
+                        tvCallerAvatar.setScaleX(v);
+                        tvCallerAvatar.setScaleY(v);
+                    });
+                    pulse.start();
+                    tvCallerAvatar.setTag(pulse);
+                }
             }
         }
 

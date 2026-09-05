@@ -36,6 +36,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -79,9 +80,10 @@ public class ChatWorkFragment extends Fragment implements
     private TextView tvDeviceName;
     private RecyclerView recyclerViewMessages;
     private EditText etMessage;
-    private Button btnSend;
-    private Button btnMore;
+    private View btnSend;
+    private View btnMore;
     private ImageButton btnVoice;
+    private LinearLayout emptyState;
 
     // ---------- 蓝牙服务 ----------
     private IBluetoothService bluetoothService;
@@ -294,6 +296,22 @@ public class ChatWorkFragment extends Fragment implements
         });
         messageAdapter.setOnVoiceClickListener((msg, pos) -> playVoice(msg));
         recyclerViewMessages.setAdapter(messageAdapter);
+
+        // 空消息状态视图：随数据增减切换显示
+        emptyState = view.findViewById(R.id.emptyState);
+        messageAdapter.registerAdapterDataObserver(new androidx.recyclerview.widget.RecyclerView.AdapterDataObserver() {
+            @Override
+            public void onChanged() {
+                updateEmptyState();
+            }
+        });
+        updateEmptyState();
+    }
+
+    private void updateEmptyState() {
+        if (emptyState != null) {
+            emptyState.setVisibility(messageList.isEmpty() ? View.VISIBLE : View.GONE);
+        }
     }
 
     private void bindServices() {

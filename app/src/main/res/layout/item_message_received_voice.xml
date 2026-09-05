@@ -1,51 +1,87 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 接收语音气泡 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:padding="4dp"
-    android:gravity="start">
+    android:gravity="start|center_vertical"
+    android:paddingLeft="12dp"
+    android:paddingRight="48dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
+
+    <TextView
+        android:id="@+id/tvAvatar"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginRight="8dp"
+        android:gravity="center"
+        android:background="@android:color/transparent"
+        android:tag="md3-circle-tertiary"
+        android:text="对"
+        android:textColor="?attr/md3OnTertiaryContainer"
+        android:textSize="13sp"
+        android:textStyle="bold" />
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:tag="md3-bubble-received"
-        android:padding="8dp"
-        android:gravity="center_vertical">
+        android:orientation="vertical">
 
         <TextView
             android:id="@+id/tvSender"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:textColor="?attr/md3OnSurface"
-            android:text="对方" />
-
-        <ImageView
-            android:id="@+id/ivVoiceIcon"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:tag="md3-icon-on-surface"
-            app:srcCompat="@drawable/ic_voice"
-            android:scaleType="centerInside" />
-
-        <TextView
-            android:id="@+id/tvVoiceDuration"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="14sp"
-            android:textColor="?attr/md3OnSurface"
-            android:layout_marginStart="8dp"
-            android:text="0\" />
-
-        <TextView
-            android:id="@+id/tvTime"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="10sp"
+            android:layout_marginBottom="2dp"
+            android:layout_marginLeft="4dp"
             android:textColor="?attr/md3OnSurfaceVariant"
-            android:layout_marginStart="12dp" />
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:tag="md3-bubble-received"
+            android:padding="12dp">
+
+            <FrameLayout
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:tag="md3-chip-tertiary">
+
+                <ImageView
+                    android:id="@+id/ivVoiceIcon"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:layout_gravity="center"
+                    app:srcCompat="@drawable/ic_voice"
+                    android:tag="md3-icon-tertiary-container" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="8dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvVoiceDuration"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="?attr/md3OnSurface"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/tvTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="end"
+                    android:layout_marginTop="2dp"
+                    android:textColor="?attr/md3OnSurfaceVariant"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 </LinearLayout>

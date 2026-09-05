@@ -212,6 +212,8 @@ public final class Md3Ui {
             case "md3-btn-tonal": applyBtn(root, R.attr.md3PrimaryContainer, R.attr.md3OnPrimaryContainer); break;
             case "md3-btn-danger": applyBtn(root, R.attr.md3Error, R.attr.md3OnError); break;
             case "md3-circle-primary": applyRounded(root, R.attr.md3PrimaryContainer, 999f); break;
+            case "md3-circle-tertiary": applyRounded(root, R.attr.md3TertiaryContainer, 999f); break;
+            case "md3-icon-on-tertiary-container": tintIcon((ImageView) root, R.attr.md3OnTertiaryContainer); break;
             case "md3-input": applyRounded(root, R.attr.md3SurfaceContainerHighest, 999f); break;
             case "md3-nav-bar":
                 // 悬浮胶囊底栏：bg_md3_nav_pill 已在 inflate 期确定圆形轮廓（阴影随形状），

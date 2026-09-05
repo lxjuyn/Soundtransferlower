@@ -1,38 +1,66 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 接收图片气泡 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:padding="4dp"
-    android:gravity="start">
+    android:gravity="start|center_vertical"
+    android:paddingLeft="12dp"
+    android:paddingRight="48dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
+
+    <TextView
+        android:id="@+id/tvAvatar"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginRight="8dp"
+        android:gravity="center"
+        android:background="@android:color/transparent"
+        android:tag="md3-circle-tertiary"
+        android:text="对"
+        android:textColor="?attr/md3OnTertiaryContainer"
+        android:textSize="13sp"
+        android:textStyle="bold" />
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="8dp">
+        android:orientation="vertical">
 
         <TextView
             android:id="@+id/tvSender"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:textColor="?attr/md3OnSurface"
-            android:text="对方" />
+            android:layout_marginBottom="2dp"
+            android:layout_marginLeft="4dp"
+            android:textColor="?attr/md3OnSurfaceVariant"
+            android:textSize="12sp" />
 
-        <ImageView
-            android:id="@+id/ivImage"
-            android:layout_width="120dp"
-            android:layout_height="120dp"
-            android:scaleType="centerCrop" />
+        <LinearLayout
+            android:id="@+id/bubbleImageWrap"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:tag="md3-bubble-received"
+            android:clipToPadding="false">
+
+            <ImageView
+                android:id="@+id/ivImage"
+                android:layout_width="160dp"
+                android:layout_height="160dp"
+                android:scaleType="centerCrop"
+                android:clipToOutline="true"
+                android:clipChildren="true" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/tvTime"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="10sp"
+            android:layout_gravity="start"
+            android:layout_marginTop="2dp"
+            android:paddingLeft="4dp"
             android:textColor="?attr/md3OnSurfaceVariant"
-            android:layout_marginTop="4dp"
-            android:layout_gravity="end" />
+            android:textSize="11sp" />
     </LinearLayout>
 </LinearLayout>

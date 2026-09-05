@@ -196,6 +196,7 @@ public class TalkbackFragment extends Fragment
         initAudio();
         setupListeners();
         inactivityThresholdDisconnect = SettingsFragment.getTalkbackTimeoutSeconds(getActivity()) * 1000L;
+        setupPressFeedback(btnTalk);
         Md3Ui.applyTree(view);
 
         Intent serviceIntent = new Intent(getActivity(), BluetoothService.class);
@@ -572,6 +573,20 @@ public class TalkbackFragment extends Fragment
     private void resetInactivityTimer() {
         lastActivityTime = System.currentTimeMillis();
         LogUtil.d(TAG, "重置活动检测计时器");
+    }
+
+    /** 大按钮按压反馈：按下轻缩，松开回弹（属性动画，无 elevation 方影） */
+    private void setupPressFeedback(View v) {
+        if (v == null) return;
+        v.setOnTouchListener((view, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                view.animate().scaleX(0.95f).scaleY(0.95f).setDuration(120).start();
+            } else if (event.getAction() == android.view.MotionEvent.ACTION_UP
+                    || event.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
+                view.animate().scaleX(1f).scaleY(1f).setDuration(180).start();
+            }
+            return false; // 不吞事件，保留 OnClickListener
+        });
     }
 
     /** 可用性按钮联动：enabled=true → 主题色椭圆；false → 中性灰椭圆 */

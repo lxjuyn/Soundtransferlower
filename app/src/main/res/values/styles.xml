@@ -15,7 +15,17 @@
          colorPrimary/colorPrimaryDark/colorAccent 供状态栏与默认控件使用；
          md3* 自定义属性供布局 ?attr 与 Md3Ui 程序化取色使用。
          暗色由 values-night/colors.xml 同名色值自动适配。 -->
-    <style name="Theme.Md3" parent="Theme.AppCompat.DayNight.NoActionBar" />
+    <style name="Theme.Md3" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <!-- 全局 MD3 对话框外观：主色按钮 + 主题文字色 -->
+        <item name="alertDialogTheme">@style/Md3.AlertDialog</item>
+    </style>
+
+    <!-- MD3 对话框主题（AppCompat 对话框改造：大圆角由系统窗口背景提供时，按钮源色取主题 primary） -->
+    <style name="Md3.AlertDialog" parent="Theme.AppCompat.DayNight.Dialog.Alert">
+        <item name="colorAccent">?attr/md3Primary</item>
+        <item name="android:textColorPrimary">?attr/md3OnSurface</item>
+        <item name="android:textColorSecondary">?attr/md3OnSurfaceVariant</item>
+    </style>
 
     <style name="Theme.Md3.Indigo">
         <item name="colorPrimary">@color/md3_primary</item>

@@ -529,6 +529,7 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
     private void loadFragment(Fragment fragment) {
         if (isFinishing() || isDestroyedCompat()) return;
         getSupportFragmentManager().beginTransaction()
+                .setCustomAnimations(R.anim.fade_in, R.anim.fade_out)
                 .replace(R.id.fragment_container, fragment)
                 .addToBackStack(null)
                 .commitAllowingStateLoss();
@@ -1779,6 +1780,10 @@ public class MainActivityNew extends androidx.appcompat.app.AppCompatActivity im
             final EditText input = new EditText(getActivity());
             input.setText(currentName);
             input.setHint("输入新名称");
+            int padH = (int) (16 * getResources().getDisplayMetrics().density);
+            int padV = (int) (12 * getResources().getDisplayMetrics().density);
+            input.setPadding(padH, padV, padH, padV);
+            Md3Ui.applyRounded(input, R.attr.md3SurfaceContainerHighest, 14f);
             input.setSelectAllOnFocus(true);
             layout.addView(input);
             builder.setView(layout);

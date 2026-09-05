@@ -83,16 +83,20 @@
             android:dividerHeight="8dp" />
     </LinearLayout>
 
-    <!-- 大号 PTT 按钮 -->
+    <!-- 大号 PTT 按钮（胶囊 + 麦克风图标 + 按压缩放动画见 talk 页) -->
     <Button
         android:id="@+id/btnTalk"
         android:layout_width="match_parent"
-        android:layout_height="64dp"
+        android:layout_height="72dp"
         android:layout_marginBottom="12dp"
         android:enabled="false"
         android:text="按住对讲"
         android:textSize="17sp"
-        android:textStyle="bold" />
+        android:textStyle="bold"
+        android:drawableTop= "@drawable/ic_md3_mic"
+        android:drawablePadding="2dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp" />
 
     <!-- 工具按钮第一排 -->
     <LinearLayout

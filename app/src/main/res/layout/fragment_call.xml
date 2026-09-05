@@ -51,6 +51,8 @@
             android:layout_height="64dp"
             android:tag="md3-btn-tonal"
             android:text="@string/call_speaker"
+            android:drawableLeft="@drawable/ic_md3_volume_up"
+            android:drawablePadding="8dp"
             android:paddingLeft="24dp"
             android:paddingRight="24dp"
             android:layout_marginEnd="24dp" />
@@ -61,6 +63,8 @@
             android:layout_height="64dp"
             android:tag="md3-btn-danger"
             android:text="@string/call_hangup"
+            android:drawableLeft="@drawable/ic_md3_call_end"
+            android:drawablePadding="8dp"
             android:textSize="16sp"
             android:textStyle="bold"
             android:paddingLeft="32dp"

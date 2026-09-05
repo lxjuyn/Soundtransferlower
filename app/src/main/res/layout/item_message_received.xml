@@ -1,42 +1,65 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 接收文本气泡（MD3：左侧头像 + 发送者名 + 圆角气泡） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:gravity="start"
-    android:padding="8dp">
+    android:orientation="horizontal"
+    android:gravity="start|center_vertical"
+    android:paddingLeft="12dp"
+    android:paddingRight="48dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
 
     <TextView
-        android:id="@+id/tvSender"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:textSize="12sp"
-        android:textColor="?attr/md3OnSurfaceVariant"
-        android:layout_marginBottom="2dp" />
+        android:id="@+id/tvAvatar"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginRight="8dp"
+        android:gravity="center"
+        android:background="@android:color/transparent"
+        android:tag="md3-circle-tertiary"
+        android:text="对"
+        android:textColor="?attr/md3OnTertiaryContainer"
+        android:textSize="13sp"
+        android:textStyle="bold" />
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:tag="md3-bubble-received"
-        android:padding="12dp">
+        android:orientation="vertical">
 
         <TextView
-            android:id="@+id/tvMessage"
+            android:id="@+id/tvSender"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="?attr/md3OnSurface"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/tvTime"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="end"
-            android:textSize="12sp"
+            android:layout_marginBottom="2dp"
+            android:layout_marginLeft="4dp"
             android:textColor="?attr/md3OnSurfaceVariant"
-            android:layout_marginTop="4dp" />
+            android:textSize="11sp" />
 
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:tag="md3-bubble-received"
+            android:maxWidth="240dp"
+            android:padding="12dp">
+
+            <TextView
+                android:id="@+id/tvMessage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="?attr/md3OnSurface"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginTop="4dp"
+                android:textColor="?attr/md3OnSurfaceVariant"
+                android:textSize="11sp" />
+        </LinearLayout>
     </LinearLayout>
-
 </LinearLayout>

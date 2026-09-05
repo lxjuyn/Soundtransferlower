@@ -1,41 +1,84 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 发送文件气泡（MD3：文件图标芯片 + 名称/大小/时间） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:padding="4dp"
-    android:gravity="end">
+    android:gravity="end|center_vertical"
+    android:paddingLeft="48dp"
+    android:paddingRight="12dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="8dp">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:tag="md3-bubble-sent"
+        android:padding="12dp">
 
-        <TextView
-            android:id="@+id/tvFileName"
+        <FrameLayout
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:tag="md3-chip-tertiary">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                app:srcCompat="@drawable/ic_md3_file"
+                android:tag="md3-icon-tertiary-container" />
+        </FrameLayout>
+
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
-            android:textColor="?attr/md3OnSurface"
-            android:maxWidth="200dp"
-            android:ellipsize="middle"
-            android:singleLine="true" />
+            android:layout_marginLeft="10dp"
+            android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/tvFileSize"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:textColor="?attr/md3OnSurfaceVariant" />
+            <TextView
+                android:id="@+id/tvFileName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="?attr/md3OnPrimaryContainer"
+                android:textSize="14sp"
+                android:maxWidth="180dp"
+                android:ellipsize="middle"
+                android:singleLine="true" />
 
-        <TextView
-            android:id="@+id/tvTime"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="10sp"
-            android:textColor="?attr/md3OnSurfaceVariant"
-            android:layout_marginTop="4dp"
-            android:layout_gravity="end" />
+            <TextView
+                android:id="@+id/tvFileSize"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="?attr/md3OnPrimaryContainer"
+                android:alpha="0.8"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/tvTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginTop="4dp"
+                android:textColor="?attr/md3OnPrimaryContainer"
+                android:alpha="0.7"
+                android:textSize="11sp" />
+        </LinearLayout>
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvAvatar"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginLeft="8dp"
+        android:gravity="center"
+        android:background="@android:color/transparent"
+        android:tag="md3-circle-primary"
+        android:text="我"
+        android:textColor="?attr/md3OnPrimaryContainer"
+        android:textSize="13sp"
+        android:textStyle="bold" />
 </LinearLayout>

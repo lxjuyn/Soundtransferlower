@@ -1,31 +1,58 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 发送图片气泡（MD3：圆角裁剪容器 + 时间戳） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:padding="4dp"
-    android:gravity="end">
+    android:gravity="end|center_vertical"
+    android:paddingLeft="48dp"
+    android:paddingRight="12dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:orientation="vertical">
 
-        android:padding="8dp">
+        <LinearLayout
+            android:id="@+id/bubbleImageWrap"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:tag="md3-bubble-sent"
+            android:clipToPadding="false"
+            android:layout_gravity="end">
 
-        <ImageView
-            android:id="@+id/ivImage"
-            android:layout_width="120dp"
-            android:layout_height="120dp"
-            android:scaleType="centerCrop"/>
+            <ImageView
+                android:id="@+id/ivImage"
+                android:layout_width="160dp"
+                android:layout_height="160dp"
+                android:scaleType="centerCrop"
+                android:clipToOutline="true"
+                android:clipChildren="true" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/tvTime"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="10sp"
+            android:layout_gravity="end"
+            android:layout_marginTop="2dp"
+            android:paddingRight="4dp"
             android:textColor="?attr/md3OnSurfaceVariant"
-            android:layout_marginTop="4dp"
-            android:layout_gravity="end" />
+            android:textSize="11sp" />
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvAvatar"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginLeft="8dp"
+        android:gravity="center"
+        android:background="@android:color/transparent"
+        android:tag="md3-circle-primary"
+        android:text="我"
+        android:textColor="?attr/md3OnPrimaryContainer"
+        android:textSize="13sp"
+        android:textStyle="bold" />
 </LinearLayout>

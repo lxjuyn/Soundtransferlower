@@ -128,6 +128,10 @@ public class SettingsFragment extends Fragment {
         input.setText(currentName);
         input.setHint(currentName);
         input.setSelectAllOnFocus(true);
+        int padH = (int) (16 * getResources().getDisplayMetrics().density);
+        int padV = (int) (12 * getResources().getDisplayMetrics().density);
+        input.setPadding(padH, padV, padH, padV);
+        Md3Ui.applyRounded(input, R.attr.md3SurfaceContainerHighest, 14f);
         builder.setView(input);
         builder.setPositiveButton(R.string.settings_save, (dialog, which) -> {
             String newName = input.getText().toString().trim();
