@@ -103,7 +103,6 @@
                     android:id="@+id/navIconTalkback"
                     android:layout_width="22dp"
                     android:layout_height="22dp"
-                    app:srcCompat="@drawable/ic_md3_mic"
                     app:srcCompat="@drawable/ic_md3_mic" />
 
                 <TextView
@@ -132,7 +131,6 @@
                     android:id="@+id/navIconChat"
                     android:layout_width="22dp"
                     android:layout_height="22dp"
-                    app:srcCompat="@drawable/ic_md3_chat"
                     app:srcCompat="@drawable/ic_md3_chat" />
 
                 <TextView
@@ -161,7 +159,6 @@
                     android:id="@+id/navIconMine"
                     android:layout_width="22dp"
                     android:layout_height="22dp"
-                    app:srcCompat="@drawable/ic_md3_person"
                     app:srcCompat="@drawable/ic_md3_person" />
 
                 <TextView
